@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # Node.js Backend
+  backend:
+    build: ./back
+    container_name: trading_backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - BYBIT_TESTNET=true
+      - ML_SERVICE_URL=http://ml-service:5000
+      - ML_ENABLED=true
+      - ML_AUTO_TRAIN=false
+      - ML_TRAIN_DATA_LIMIT=1000
+    env_file:
+      - ./back/.env
+    volumes:
+      - ./back/src:/app/src
+      - ./back/package.json:/app/package.json
+    command: npm run dev
+    restart: unless-stopped
+    depends_on:
+      - ml-service
+      - db
+      - redis
+    networks:
+      - trading_network
+
+  # Python ML Service
+  ml-service:
+    build: ./ml-service
+    container_name: trading_ml
+    ports:
+      - "5001:5000"
+    environment:
+      - FLASK_ENV=development
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./ml-service:/app
+      - ml-models:/app/models
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - trading_network
+
+  # React Frontend
+  frontend:
+    build: ./front
+    container_name: trading_frontend
+    ports:
+      - "3001:3001"
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    volumes:
+      - ./front/src:/app/src
+      - ./front/package.json:/app/package.json
+    command: npm run dev
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - trading_network
+
+  # TimescaleDB for historical data
+  db:
+    image: timescale/timescaledb:latest-pg14
+    container_name: trading_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: trading_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - trading_network
+
+  # Redis for caching
+  redis:
+    image: redis:6.2-alpine
+    container_name: trading_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - trading_network
+
+volumes:
+  timescaledb_data:
+  redis_data:
+  ml-models:
+
+networks:
+  trading_network:
+    driver: bridge 

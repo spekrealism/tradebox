@@ -1,0 +1,581 @@
+import express from 'express';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
+import cors from 'cors';
+import { bybitApi } from './api/bybit';
+import { config } from './config';
+import { MLTradingStrategy } from './strategies/ml-strategy';
+
+const app = express();
+
+// Безопасность
+app.use(helmet());
+app.use(cors({
+  origin: config.server.allowedOrigins,
+  credentials: true
+}));
+
+// Rate limiting для API endpoints
+const limiter = rateLimit({
+  windowMs: config.rateLimiter.windowMs,
+  max: config.rateLimiter.maxRequests,
+  message: {
+    error: 'Слишком много запросов с вашего IP, попробуйте позже.',
+    code: 'RATE_LIMIT_EXCEEDED'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Строгий rate limiting для торговых операций
+const tradingLimiter = rateLimit({
+  windowMs: config.rateLimiter.tradingWindowMs,
+  max: config.rateLimiter.maxTradingRequests,
+  message: {
+    error: 'Превышен лимит торговых операций. Подождите минуту.',
+    code: 'TRADING_LIMIT_EXCEEDED'
+  }
+});
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Применяем общий rate limiter ко всем маршрутам
+app.use('/api/', limiter);
+
+// Middleware для проверки API ключей (для торговых операций)
+const requireApiKey = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!config.bybit.apiKey || !config.bybit.apiSecret) {
+    return res.status(401).json({
+      error: 'API ключи не настроены',
+      code: 'API_KEYS_MISSING'
+    });
+  }
+  next();
+};
+
+// Базовые маршруты
+
+// Проверка здоровья сервиса
+app.get('/health', (req, res) => {
+  const wsStatus = bybitApi.getWebSocketStatus();
+  const rateLimiterStats = bybitApi.getRateLimiterStats();
+  
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    websocket: wsStatus,
+    rateLimiter: rateLimiterStats,
+    testnet: config.bybit.testnet
+  });
+});
+
+// Информационные endpoints (только чтение)
+
+// Получение OHLCV данных
+app.get('/api/ohlcv/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { timeframe = '1h', limit = 100 } = req.query;
+    
+    const ohlcv = await bybitApi.fetchOHLCV(
+      symbol, 
+      timeframe as string, 
+      undefined, 
+      parseInt(limit as string)
+    );
+    
+    res.json({
+      success: true,
+      data: ohlcv,
+      symbol,
+      timeframe,
+      count: ohlcv.length
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'FETCH_OHLCV_ERROR'
+    });
+  }
+});
+
+// Получение тикера
+app.get('/api/ticker/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const ticker = await bybitApi.fetchTicker(symbol);
+    
+    res.json({
+      success: true,
+      data: ticker,
+      symbol
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'FETCH_TICKER_ERROR'
+    });
+  }
+});
+
+// Получение книги ордеров
+app.get('/api/orderbook/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { limit = 25 } = req.query;
+    
+    const orderbook = await bybitApi.fetchOrderBook(symbol, parseInt(limit as string));
+    
+    res.json({
+      success: true,
+      data: orderbook,
+      symbol
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'FETCH_ORDERBOOK_ERROR'
+    });
+  }
+});
+
+// Получение списка рынков
+app.get('/api/markets', async (req, res) => {
+  try {
+    const markets = await bybitApi.fetchMarkets();
+    
+    res.json({
+      success: true,
+      data: markets,
+      count: markets.length
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'FETCH_MARKETS_ERROR'
+    });
+  }
+});
+
+// Защищенные endpoints (требуют API ключи)
+
+// Получение баланса
+app.get('/api/balance', requireApiKey, async (req, res) => {
+  try {
+    const balance = await bybitApi.fetchBalance();
+    
+    res.json({
+      success: true,
+      data: balance
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'FETCH_BALANCE_ERROR'
+    });
+  }
+});
+
+// Получение открытых позиций
+app.get('/api/positions', requireApiKey, async (req, res) => {
+  try {
+    const positions = await bybitApi.fetchPositions();
+    
+    res.json({
+      success: true,
+      data: positions,
+      count: positions.length
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'FETCH_POSITIONS_ERROR'
+    });
+  }
+});
+
+// Получение открытых ордеров
+app.get('/api/orders', requireApiKey, async (req, res) => {
+  try {
+    const { symbol } = req.query;
+    const orders = await bybitApi.fetchOpenOrders(symbol as string);
+    
+    res.json({
+      success: true,
+      data: orders,
+      count: orders.length
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'FETCH_ORDERS_ERROR'
+    });
+  }
+});
+
+// Торговые endpoints (с дополнительным rate limiting)
+
+// Создание ордера
+app.post('/api/order', tradingLimiter, requireApiKey, async (req, res) => {
+  try {
+    const { symbol, side, amount, price, type = 'limit' } = req.body;
+    
+    if (!symbol || !side || !amount) {
+      return res.status(400).json({
+        success: false,
+        error: 'Обязательные поля: symbol, side, amount',
+        code: 'INVALID_PARAMETERS'
+      });
+    }
+
+    const order = await bybitApi.createOrder({
+      symbol,
+      side,
+      amount: parseFloat(amount),
+      price: price ? parseFloat(price) : undefined,
+      type
+    });
+    
+    res.json({
+      success: true,
+      data: order,
+      message: 'Ордер успешно создан'
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'CREATE_ORDER_ERROR'
+    });
+  }
+});
+
+// Отмена ордера
+app.delete('/api/order/:orderId', tradingLimiter, requireApiKey, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { symbol } = req.body;
+    
+    if (!symbol) {
+      return res.status(400).json({
+        success: false,
+        error: 'Обязательное поле: symbol',
+        code: 'INVALID_PARAMETERS'
+      });
+    }
+
+    const order = await bybitApi.cancelOrder(orderId, symbol);
+    
+    res.json({
+      success: true,
+      data: order,
+      message: 'Ордер успешно отменен'
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'CANCEL_ORDER_ERROR'
+    });
+  }
+});
+
+// WebSocket статус
+app.get('/api/websocket/status', (req, res) => {
+  const status = bybitApi.getWebSocketStatus();
+  res.json({
+    success: true,
+    data: status
+  });
+});
+
+// Rate limiter статистика
+app.get('/api/stats/rate-limiter', (req, res) => {
+  const stats = bybitApi.getRateLimiterStats();
+  res.json({
+    success: true,
+    data: stats
+  });
+});
+
+// ML стратегия endpoints
+if (config.ml.enabled) {
+  const mlStrategy = new MLTradingStrategy();
+
+  // Получение ML прогноза
+  app.post('/api/ml/predict', async (req, res) => {
+    try {
+      const { symbol = 'BTCUSDT', limit = 100 } = req.body;
+      
+      // Получаем исторические данные
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+      const currentPrice = (await bybitApi.fetchTicker(symbol)).last;
+      
+      const input = {
+        symbol,
+        ohlcv: ohlcv.map(([timestamp, open, high, low, close, volume]) => ({
+          timestamp: Number(timestamp),
+          open: Number(open),
+          high: Number(high),
+          low: Number(low),
+          close: Number(close),
+          volume: Number(volume)
+        })),
+        currentPrice: Number(currentPrice)
+      };
+      
+      const prediction = await mlStrategy.getPrediction(input);
+      
+      res.json({
+        success: true,
+        data: prediction
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        code: 'ML_PREDICTION_ERROR'
+      });
+    }
+  });
+
+  // Обучение модели
+  app.post('/api/ml/train', async (req, res) => {
+    try {
+      const { symbol = 'BTCUSDT', limit = config.ml.trainDataLimit } = req.body;
+      
+      // Получаем исторические данные для обучения
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+      
+      const trainData = {
+        ohlcv: ohlcv.map(([timestamp, open, high, low, close, volume]) => ({
+          timestamp: Number(timestamp),
+          open: Number(open),
+          high: Number(high),
+          low: Number(low),
+          close: Number(close),
+          volume: Number(volume)
+        }))
+      };
+      
+      // Отправляем запрос на обучение в ML сервис
+      const axios = require('axios');
+      const response = await axios.post(`${config.ml.serviceUrl}/train`, trainData);
+      
+      res.json({
+        success: true,
+        data: response.data,
+        message: 'Модель успешно обучена'
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        code: 'ML_TRAINING_ERROR'
+      });
+    }
+  });
+
+  // Получение технических индикаторов
+  app.post('/api/ml/indicators', async (req, res) => {
+    try {
+      const { symbol = 'BTCUSDT', limit = 100 } = req.body;
+      
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+      const currentPrice = (await bybitApi.fetchTicker(symbol)).last;
+      
+      const input = {
+        symbol,
+        ohlcv: ohlcv.map(([timestamp, open, high, low, close, volume]) => ({
+          timestamp: Number(timestamp),
+          open: Number(open),
+          high: Number(high),
+          low: Number(low),
+          close: Number(close),
+          volume: Number(volume)
+        })),
+        currentPrice: Number(currentPrice)
+      };
+      
+      const indicators = await mlStrategy.getTechnicalIndicators(input);
+      
+      res.json({
+        success: true,
+        data: indicators
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        code: 'ML_INDICATORS_ERROR'
+      });
+    }
+  });
+
+  // Статус ML сервиса
+  app.get('/api/ml/health', async (req, res) => {
+    try {
+      const isHealthy = await mlStrategy.healthCheck();
+      const stats = await mlStrategy.getModelStats();
+      
+      res.json({
+        success: true,
+        data: {
+          healthy: isHealthy,
+          stats: stats,
+          enabled: config.ml.enabled
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        code: 'ML_HEALTH_ERROR'
+      });
+    }
+  });
+
+  // Автоматическая торговля на основе ML
+  app.post('/api/ml/auto-trade', tradingLimiter, requireApiKey, async (req, res) => {
+    try {
+      const { symbol = 'BTCUSDT', amount, enableStopLoss = true } = req.body;
+      
+      if (!amount) {
+        return res.status(400).json({
+          success: false,
+          error: 'Обязательное поле: amount',
+          code: 'INVALID_PARAMETERS'
+        });
+      }
+
+      // Получаем прогноз
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', 100);
+      const currentPrice = (await bybitApi.fetchTicker(symbol)).last;
+      
+             const input = {
+         symbol,
+         ohlcv: ohlcv.map(([timestamp, open, high, low, close, volume]) => ({
+           timestamp: Number(timestamp),
+           open: Number(open),
+           high: Number(high),
+           low: Number(low),
+           close: Number(close),
+           volume: Number(volume)
+         })),
+         currentPrice: Number(currentPrice)
+       };
+      
+      const prediction = await mlStrategy.getPrediction(input);
+      
+      // Проверяем, нужно ли торговать
+      if (prediction.signal === 'HOLD' || prediction.confidence < 0.7) {
+        return res.json({
+          success: true,
+          action: 'no_trade',
+          data: {
+            prediction,
+            reason: 'Низкая уверенность или сигнал HOLD'
+          }
+        });
+      }
+
+      // Создаем ордер
+      const side = prediction.signal === 'BUY' ? 'buy' : 'sell';
+      const order = await bybitApi.createOrder({
+        symbol,
+        side,
+        amount: parseFloat(amount),
+        type: 'market'
+      });
+
+      // Устанавливаем stop-loss если включен
+      let stopLossOrder = null;
+      if (enableStopLoss && prediction.stopLoss) {
+        const stopSide = side === 'buy' ? 'sell' : 'buy';
+        stopLossOrder = await bybitApi.createOrder({
+          symbol,
+          side: stopSide,
+          amount: parseFloat(amount),
+          price: prediction.stopLoss,
+          type: 'limit'
+        });
+      }
+      
+      res.json({
+        success: true,
+        action: 'trade_executed',
+        data: {
+          prediction,
+          order,
+          stopLossOrder
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        code: 'ML_AUTO_TRADE_ERROR'
+      });
+    }
+  });
+}
+
+// Обработка ошибок
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Необработанная ошибка:', err);
+  res.status(500).json({
+    success: false,
+    error: 'Внутренняя ошибка сервера',
+    code: 'INTERNAL_SERVER_ERROR'
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Эндпоинт не найден',
+    code: 'NOT_FOUND'
+  });
+});
+
+// Запуск сервера
+export const startServer = async (): Promise<void> => {
+  try {
+    // Инициализация WebSocket соединений
+    await bybitApi.initializeWebSockets();
+    
+    app.listen(config.server.port, () => {
+      console.log(`🚀 Сервер запущен на порту ${config.server.port}`);
+      console.log(`📊 Режим: ${config.bybit.testnet ? 'TESTNET' : 'MAINNET'}`);
+      console.log(`🔐 API ключи: ${config.bybit.apiKey ? 'настроены' : 'НЕ настроены'}`);
+      console.log(`📡 WebSocket: инициализация...`);
+    });
+  } catch (error) {
+    console.error('Ошибка запуска сервера:', error);
+    process.exit(1);
+  }
+};
+
+// Грациозное отключение
+process.on('SIGTERM', () => {
+  console.log('Получен SIGTERM, закрытие соединений...');
+  bybitApi.disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('Получен SIGINT, закрытие соединений...');
+  bybitApi.disconnect();
+  process.exit(0);
+});
+
+export default app; 
