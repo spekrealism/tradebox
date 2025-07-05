@@ -26,5 +26,24 @@ export const config = {
     serviceUrl: process.env.ML_SERVICE_URL || 'http://ml-service:5000',
     autoTrain: process.env.ML_AUTO_TRAIN === 'true',
     trainDataLimit: parseInt(process.env.ML_TRAIN_DATA_LIMIT || '1000'),
+  },
+  db: {
+    host: process.env.DB_HOST || 'db',
+    port: parseInt(process.env.DB_PORT || '5432'),
+    user: process.env.DB_USER || 'user',
+    password: process.env.DB_PASSWORD || 'password',
+    database: process.env.DB_NAME || 'trading_db',
+  },
+  openai: {
+    enabled: process.env.OPENAI_ENABLED === 'true',
+    apiKey: process.env.OPENAI_API_KEY || '',
+    model: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
+    maxTokens: parseInt(process.env.OPENAI_MAX_TOKENS || '1000'),
+    temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.7'),
+  },
+  strategies: {
+    primary: process.env.PRIMARY_STRATEGY || 'openai', // 'openai', 'ml', 'hybrid'
+    enableComparison: process.env.ENABLE_STRATEGY_COMPARISON === 'true',
+    confidenceThreshold: parseFloat(process.env.CONFIDENCE_THRESHOLD || '0.7'),
   }
 }; 

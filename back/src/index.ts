@@ -14,30 +14,36 @@ async function main() {
       
       // Подписка на тикер BTC/USDT
       bybitApi.subscribeToTicker('BTCUSDT', (data: any) => {
-        console.log('📊 Тикер BTCUSDT:', {
-          price: data.data?.lastPrice,
-          volume: data.data?.volume24h,
-          timestamp: new Date(data.ts).toISOString()
-        });
+        if (process.env.ENABLE_WEBSOCKET_LOGS === 'true') {
+          console.log('📊 Тикер BTCUSDT:', {
+            price: data.data?.lastPrice,
+            volume: data.data?.volume24h,
+            timestamp: new Date(data.ts).toISOString()
+          });
+        }
       });
 
       // Подписка на книгу ордеров
       bybitApi.subscribeToOrderBook('BTCUSDT', 25, (data: any) => {
-        console.log('📖 Книга ордеров BTCUSDT обновлена:', {
-          bids: data.data?.b?.length || 0,
-          asks: data.data?.a?.length || 0,
-          timestamp: new Date(data.ts).toISOString()
-        });
+        if (process.env.ENABLE_WEBSOCKET_LOGS === 'true') {
+          console.log('📖 Книга ордеров BTCUSDT обновлена:', {
+            bids: data.data?.b?.length || 0,
+            asks: data.data?.a?.length || 0,
+            timestamp: new Date(data.ts).toISOString()
+          });
+        }
       });
 
       // Подписка на сделки
       bybitApi.subscribeToTrades('BTCUSDT', (data: any) => {
-        console.log('💰 Новая сделка BTCUSDT:', {
-          price: data.data?.[0]?.p,
-          size: data.data?.[0]?.v,
-          side: data.data?.[0]?.S,
-          timestamp: new Date(data.ts).toISOString()
-        });
+        if (process.env.ENABLE_WEBSOCKET_LOGS === 'true') {
+          console.log('💰 Новая сделка BTCUSDT:', {
+            price: data.data?.[0]?.p,
+            size: data.data?.[0]?.v,
+            side: data.data?.[0]?.S,
+            timestamp: new Date(data.ts).toISOString()
+          });
+        }
       });
 
       console.log("✅ WebSocket подписки настроены");

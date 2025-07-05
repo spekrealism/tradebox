@@ -10,11 +10,13 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=3000
-      - BYBIT_TESTNET=true
+      # - BYBIT_TESTNET=false
       - ML_SERVICE_URL=http://ml-service:5000
       - ML_ENABLED=true
       - ML_AUTO_TRAIN=false
       - ML_TRAIN_DATA_LIMIT=1000
+      - PRIMARY_STRATEGY=openai
+      - ENABLE_STRATEGY_COMPARISON=true
     env_file:
       - ./back/.env
     volumes:
@@ -58,6 +60,7 @@ services:
       - "3001:3001"
     environment:
       - VITE_API_URL=http://localhost:3000
+      - VITE_BACKEND_HOST=backend
     volumes:
       - ./front/src:/app/src
       - ./front/package.json:/app/package.json

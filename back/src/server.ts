@@ -5,6 +5,10 @@ import cors from 'cors';
 import { bybitApi } from './api/bybit';
 import { config } from './config';
 import { MLTradingStrategy } from './strategies/ml-strategy';
+import { OpenAITradingStrategy, MarketData } from './strategies/openai-strategy';
+import { StrategyManager } from './strategies/strategy-manager';
+import { initDb } from './db';
+import { startCollector } from './jobs/ohlcv-collector';
 
 const app = express();
 
@@ -306,6 +310,36 @@ app.get('/api/stats/rate-limiter', (req, res) => {
   });
 });
 
+// Получение статистики rate limiter
+app.get('/api/rate-limit', (req, res) => {
+  const stats = bybitApi.getRateLimiterStats();
+  const remaining = stats.maxRequests - stats.requests;
+  
+  res.json({
+    success: true,
+    data: {
+      requests: stats.requests,
+      maxRequests: stats.maxRequests,
+      remaining: remaining,
+      resetTime: new Date(Date.now() + 60000).toISOString(), // Через минуту
+      status: remaining > 50 ? 'OK' : remaining > 20 ? 'WARNING' : 'CRITICAL'
+    }
+  });
+});
+
+// Получение статуса WebSocket подключений
+app.get('/api/websocket-status', (req, res) => {
+  const status = bybitApi.getWebSocketStatus();
+  res.json({
+    success: true,
+    data: {
+      publicWebSocket: status.public,
+      privateWebSocket: status.private,
+      subscriptions: []
+    }
+  });
+});
+
 // ML стратегия endpoints
 if (config.ml.enabled) {
   const mlStrategy = new MLTradingStrategy();
@@ -528,6 +562,259 @@ if (config.ml.enabled) {
   });
 }
 
+// OpenAI стратегия endpoints
+if (config.openai.enabled) {
+  const openaiStrategy = new OpenAITradingStrategy();
+
+  // Получение OpenAI прогноза
+  app.post('/api/openai/predict', async (req, res) => {
+    try {
+      const { symbol = 'BTCUSDT', limit = 100, riskTolerance = 'moderate', timeframe = '1h' } = req.body;
+      
+      // Получаем рыночные данные
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, timeframe, limit);
+      const ticker = await bybitApi.fetchTicker(symbol);
+      const currentPrice = Number(ticker.last);
+      
+      const marketData: MarketData = {
+        symbol,
+        currentPrice,
+        ohlcv: ohlcv.map(([timestamp, open, high, low, close, volume]) => ({
+          timestamp: Number(timestamp),
+          open: Number(open),
+          high: Number(high),
+          low: Number(low),
+          close: Number(close),
+          volume: Number(volume)
+        })),
+        technicalIndicators: {
+          volume24h: Number(ticker.quoteVolume || 0),
+          priceChange24h: Number(ticker.percentage || 0),
+        }
+      };
+      
+      // Создаем экземпляр стратегии с нужными параметрами
+      const customStrategy = new OpenAITradingStrategy({
+        riskTolerance: riskTolerance as 'conservative' | 'moderate' | 'aggressive',
+        timeframe: timeframe as '1h' | '4h' | '1d'
+      });
+      
+      const prediction = await customStrategy.getPrediction(marketData);
+      
+      res.json({
+        success: true,
+        data: prediction,
+        model: customStrategy.getModelInfo()
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        code: 'OPENAI_PREDICTION_ERROR'
+      });
+    }
+  });
+
+  // Получение множественных прогнозов с разными настройками
+  app.post('/api/openai/predict-variations', async (req, res) => {
+    try {
+      const { symbol = 'BTCUSDT', limit = 100 } = req.body;
+      
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+      const ticker = await bybitApi.fetchTicker(symbol);
+      const currentPrice = Number(ticker.last);
+      
+      const marketData: MarketData = {
+        symbol,
+        currentPrice,
+        ohlcv: ohlcv.map(([timestamp, open, high, low, close, volume]) => ({
+          timestamp: Number(timestamp),
+          open: Number(open),
+          high: Number(high),
+          low: Number(low),
+          close: Number(close),
+          volume: Number(volume)
+        })),
+        technicalIndicators: {
+          volume24h: Number(ticker.quoteVolume || 0),
+          priceChange24h: Number(ticker.percentage || 0),
+        }
+      };
+      
+      const predictions = await openaiStrategy.getMultiplePredictions(marketData);
+      
+      res.json({
+        success: true,
+        data: predictions,
+        count: predictions.length
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        code: 'OPENAI_VARIATIONS_ERROR'
+      });
+    }
+  });
+
+  // Статус OpenAI сервиса
+  app.get('/api/openai/health', async (req, res) => {
+    try {
+      const isHealthy = await openaiStrategy.healthCheck();
+      const modelInfo = openaiStrategy.getModelInfo();
+      
+      res.json({
+        success: true,
+        data: {
+          healthy: isHealthy,
+          model: modelInfo,
+          enabled: config.openai.enabled
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        code: 'OPENAI_HEALTH_ERROR'
+      });
+    }
+  });
+}
+
+// Менеджер стратегий endpoints
+const strategyManager = new StrategyManager();
+
+// Получение прогноза от основной стратегии
+app.post('/api/strategy/predict', async (req, res) => {
+  try {
+    const { symbol = 'BTCUSDT', limit = 100 } = req.body;
+    
+    const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+    const ticker = await bybitApi.fetchTicker(symbol);
+    const currentPrice = Number(ticker.last);
+    
+    const marketData: MarketData = {
+      symbol,
+      currentPrice,
+      ohlcv: ohlcv.map(([timestamp, open, high, low, close, volume]) => ({
+        timestamp: Number(timestamp),
+        open: Number(open),
+        high: Number(high),
+        low: Number(low),
+        close: Number(close),
+        volume: Number(volume)
+      })),
+      technicalIndicators: {
+        volume24h: Number(ticker.quoteVolume || 0),
+        priceChange24h: Number(ticker.percentage || 0),
+      }
+    };
+    
+    const combinedPrediction = await strategyManager.getPrimaryPrediction(marketData);
+    
+    res.json({
+      success: true,
+      data: combinedPrediction,
+      strategy: strategyManager.getStrategyInfo()
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'STRATEGY_PREDICTION_ERROR'
+    });
+  }
+});
+
+// Получение прогнозов от всех стратегий для сравнения
+app.post('/api/strategy/compare', async (req, res) => {
+  try {
+    const { symbol = 'BTCUSDT', limit = 100 } = req.body;
+    
+    const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+    const ticker = await bybitApi.fetchTicker(symbol);
+    const currentPrice = Number(ticker.last);
+    
+    const marketData: MarketData = {
+      symbol,
+      currentPrice,
+      ohlcv: ohlcv.map(([timestamp, open, high, low, close, volume]) => ({
+        timestamp: Number(timestamp),
+        open: Number(open),
+        high: Number(high),
+        low: Number(low),
+        close: Number(close),
+        volume: Number(volume)
+      })),
+      technicalIndicators: {
+        volume24h: Number(ticker.quoteVolume || 0),
+        priceChange24h: Number(ticker.percentage || 0),
+      }
+    };
+    
+    const allPredictions = await strategyManager.getAllPredictions(marketData);
+    
+    res.json({
+      success: true,
+      data: allPredictions,
+      strategy: strategyManager.getStrategyInfo()
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'STRATEGY_COMPARE_ERROR'
+    });
+  }
+});
+
+// Статус всех стратегий
+app.get('/api/strategy/health', async (req, res) => {
+  try {
+    const healthStatus = await strategyManager.healthCheck();
+    const strategyInfo = strategyManager.getStrategyInfo();
+    
+    res.json({
+      success: true,
+      data: {
+        health: healthStatus,
+        info: strategyInfo,
+        config: {
+          primary: config.strategies.primary,
+          comparison: config.strategies.enableComparison,
+          confidenceThreshold: config.strategies.confidenceThreshold,
+          openaiEnabled: config.openai.enabled,
+          mlEnabled: config.ml.enabled
+        }
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'STRATEGY_HEALTH_ERROR'
+    });
+  }
+});
+
+// Получение состояния всех агентов
+app.get('/api/agents/status', async (req, res) => {
+  try {
+    const agents = await strategyManager.getAgentsStatus();
+    
+    res.json({
+      success: true,
+      data: agents
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'AGENTS_STATUS_ERROR'
+    });
+  }
+});
+
 // Обработка ошибок
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Необработанная ошибка:', err);
@@ -550,8 +837,14 @@ app.use('*', (req, res) => {
 // Запуск сервера
 export const startServer = async (): Promise<void> => {
   try {
+    // Инициализация TimescaleDB
+    await initDb();
+
     // Инициализация WebSocket соединений
     await bybitApi.initializeWebSockets();
+
+    // Запуск планировщика сбора OHLCV
+    startCollector();
     
     app.listen(config.server.port, () => {
       console.log(`🚀 Сервер запущен на порту ${config.server.port}`);

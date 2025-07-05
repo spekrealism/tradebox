@@ -4,6 +4,8 @@ import Navbar from './components/Navbar'
 import Dashboard from './pages/Dashboard'
 import Trading from './pages/Trading'
 import MLAnalysis from './pages/MLAnalysis'
+import StrategyAnalysis from './pages/StrategyAnalysis'
+import AgentSpacePage from './pages/AgentSpace'
 import Settings from './pages/Settings'
 
 function App() {
@@ -15,6 +17,8 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/trading" element={<Trading />} />
           <Route path="/ml-analysis" element={<MLAnalysis />} />
+          <Route path="/strategy-analysis" element={<StrategyAnalysis />} />
+          <Route path="/agents" element={<AgentSpacePage />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Container>

@@ -87,6 +87,8 @@ export class BybitWebSocket {
       return;
     }
 
+    // Используем текущее время + 10 секунд для expires
+    // В соответствии с документацией: server_time - recv_window <= timestamp < server_time + 1000
     const expires = Date.now() + 10000;
     const signature = crypto
       .createHmac('sha256', config.bybit.apiSecret)
@@ -98,6 +100,7 @@ export class BybitWebSocket {
       args: [config.bybit.apiKey, expires, signature]
     };
 
+    console.log('🔐 Отправка аутентификации WebSocket...');
     this.send(authMessage);
   }
 

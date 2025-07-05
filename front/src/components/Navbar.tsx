@@ -4,6 +4,7 @@ import {
   Dashboard as DashboardIcon,
   TrendingUp as TradingIcon,
   Psychology as MLIcon,
+  SmartToy as AgentIcon,
   Settings as SettingsIcon,
   CurrencyBitcoin,
 } from '@mui/icons-material'
@@ -12,6 +13,7 @@ const navItems = [
   { path: '/', label: 'Дашборд', icon: DashboardIcon },
   { path: '/trading', label: 'Торговля', icon: TradingIcon },
   { path: '/ml-analysis', label: 'ML Анализ', icon: MLIcon },
+  { path: '/agents', label: 'Агенты', icon: AgentIcon },
   { path: '/settings', label: 'Настройки', icon: SettingsIcon },
 ]
 

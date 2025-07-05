@@ -9,7 +9,12 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://backend:3000',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/health': {
+        target: 'http://backend:3000',
         changeOrigin: true,
         secure: false,
       },
