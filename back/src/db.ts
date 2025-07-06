@@ -85,4 +85,36 @@ export async function saveOHLCVBulk(symbol: string, timeframe: string, candles: 
 
   const insertQuery = `INSERT INTO ohlcv (symbol, timeframe, ts, open, high, low, close, volume) VALUES ${placeholders.join(',')} ON CONFLICT DO NOTHING;`;
   await query(insertQuery, values);
+}
+
+/**
+ * Получает последние N OHLCV записей для символа/таймфрейма из TimescaleDB.
+ * Возвращает массив в формате ccxt: [timestamp, open, high, low, close, volume]
+ */
+export async function fetchOHLCVFromDb(symbol: string, timeframe: string, limit: number = 100): Promise<number[][]> {
+  const rows = await query<{
+    ts: string,
+    open: number,
+    high: number,
+    low: number,
+    close: number,
+    volume: number,
+  }>(
+    `SELECT ts, open, high, low, close, volume
+     FROM ohlcv
+     WHERE symbol = $1 AND timeframe = $2
+     ORDER BY ts DESC
+     LIMIT $3`,
+    [symbol, timeframe, limit]
+  );
+
+  // Возвращаем в обратном порядке (от старых к новым)
+  return rows.reverse().map(r => [
+    new Date(r.ts).getTime(),
+    Number(r.open),
+    Number(r.high),
+    Number(r.low),
+    Number(r.close),
+    Number(r.volume),
+  ]);
 } 

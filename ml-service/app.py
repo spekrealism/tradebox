@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import joblib
 import warnings
+import json
 warnings.filterwarnings('ignore')
 
 # ML imports
@@ -31,6 +32,46 @@ class BTCUSDTMLModel:
             'sharpe_ratio': 0.0,
             'last_update': None
         }
+        
+        # Каталог для хранения всех версий моделей
+        self.models_root = os.getenv('MODELS_DIR', 'models')
+        os.makedirs(self.models_root, exist_ok=True)
+
+        # Текущая директория версии модели (обновляется при обучении/загрузке)
+        self.current_version_dir = None
+
+        # Определяем последнюю сохранённую версию (если есть) и пробуем загрузить
+        self._set_latest_version_dir()
+        self._load_saved_models()
+        
+    def _load_saved_models(self):
+        """
+        Загрузка моделей и скейлеров, если они были сохранены ранее
+        """
+        if self.current_version_dir is None:
+            # Нет сохранённых версий
+            return
+
+        try:
+            mlp_path = os.path.join(self.current_version_dir, 'mlp_model.pkl')
+            lstm_path = os.path.join(self.current_version_dir, 'lstm_model.h5')
+            feat_scaler_path = os.path.join(self.current_version_dir, 'feature_scaler.pkl')
+            price_scaler_path = os.path.join(self.current_version_dir, 'price_scaler.pkl')
+            stats_path = os.path.join(self.current_version_dir, 'model_stats.pkl')
+
+            if all(os.path.exists(p) for p in [mlp_path, lstm_path, feat_scaler_path, price_scaler_path]):
+                self.mlp_model = joblib.load(mlp_path)
+                self.lstm_model = load_model(lstm_path, compile=False)
+                self.feature_scaler = joblib.load(feat_scaler_path)
+                self.price_scaler = joblib.load(price_scaler_path)
+
+                if os.path.exists(stats_path):
+                    self.model_stats = joblib.load(stats_path)
+
+                self.is_trained = True
+                print(f'✅ ML модели успешно загружены из {self.current_version_dir}')
+        except Exception as e:
+            print(f'⚠️  Не удалось загрузить сохранённые модели: {e}')
         
     def calculate_technical_indicators(self, df):
         """
@@ -177,6 +218,35 @@ class BTCUSDTMLModel:
             'last_update': datetime.now().isoformat()
         }
         
+        # --- Версионирование и сохранение артефактов обучения ---
+        version_dir = self._create_new_version_dir()
+        self.current_version_dir = version_dir
+
+        try:
+            # Сохраняем модели и скейлеры
+            joblib.dump(self.mlp_model, os.path.join(version_dir, 'mlp_model.pkl'))
+            self.lstm_model.save(os.path.join(version_dir, 'lstm_model.h5'))
+            joblib.dump(self.feature_scaler, os.path.join(version_dir, 'feature_scaler.pkl'))
+            joblib.dump(self.price_scaler, os.path.join(version_dir, 'price_scaler.pkl'))
+            joblib.dump(self.model_stats, os.path.join(version_dir, 'model_stats.pkl'))
+
+            # Сохраняем датасет, использованный для обучения (после обработки)
+            df.to_csv(os.path.join(version_dir, 'train_dataset.csv'))
+
+            # Сохраняем параметры обучения
+            params = {
+                'feature_columns': feature_columns,
+                'mlp_params': self.mlp_model.get_params(),
+                'lstm_lookback': 60,
+                'stats': self.model_stats
+            }
+            with open(os.path.join(version_dir, 'params.json'), 'w') as f:
+                json.dump(params, f, indent=4, default=str)
+
+            print(f'💾 Модели и артефакты сохранены в {version_dir}')
+        except Exception as e:
+            print(f'⚠️  Ошибка сохранения моделей: {e}')
+
         self.is_trained = True
         
     def predict(self, df):
@@ -243,6 +313,38 @@ class BTCUSDTMLModel:
             'lstm_prediction': float(lstm_pred),
             'current_price': float(current_price)
         }
+
+    # ---------- Вспомогательные методы для версионирования ----------
+    def _set_latest_version_dir(self):
+        """Определяет последнюю сохранённую директорию модели (model-XX)."""
+        version_dirs = [d for d in os.listdir(self.models_root) if d.startswith('model-')]
+        if not version_dirs:
+            self.current_version_dir = None
+            return
+
+        # Сортируем по номеру версии
+        def _extract_num(name):
+            try:
+                return int(name.split('-')[-1])
+            except ValueError:
+                return -1
+
+        latest_dirname = max(version_dirs, key=_extract_num)
+        self.current_version_dir = os.path.join(self.models_root, latest_dirname)
+
+    def _create_new_version_dir(self):
+        """Создаёт новую директорию вида model-XX и возвращает её путь."""
+        version_dirs = [d for d in os.listdir(self.models_root) if d.startswith('model-')]
+        if version_dirs:
+            nums = [int(d.split('-')[-1]) for d in version_dirs if d.split('-')[-1].isdigit()]
+            next_num = max(nums) + 1
+        else:
+            next_num = 1
+
+        new_dirname = f'model-{next_num:02d}'
+        new_dirpath = os.path.join(self.models_root, new_dirname)
+        os.makedirs(new_dirpath, exist_ok=True)
+        return new_dirpath
 
 # Глобальная модель
 ml_model = BTCUSDTMLModel()

@@ -7,7 +7,7 @@ import { config } from './config';
 import { MLTradingStrategy } from './strategies/ml-strategy';
 import { OpenAITradingStrategy, MarketData } from './strategies/openai-strategy';
 import { StrategyManager } from './strategies/strategy-manager';
-import { initDb } from './db';
+import { initDb, fetchOHLCVFromDb, saveOHLCVBulk } from './db';
 import { startCollector } from './jobs/ohlcv-collector';
 
 const app = express();
@@ -81,26 +81,54 @@ app.get('/api/ohlcv/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { timeframe = '1h', limit = 100 } = req.query;
-    
-    const ohlcv = await bybitApi.fetchOHLCV(
-      symbol, 
-      timeframe as string, 
-      undefined, 
-      parseInt(limit as string)
-    );
-    
+
+    const limitNum = parseInt(limit as string) || 100;
+
+    // 1️⃣ Пытаемся получить данные из TimescaleDB
+    let ohlcv: any[] = await fetchOHLCVFromDb(symbol, timeframe as string, limitNum);
+
+    // 2️⃣ Если данных меньше, чем запрашивал клиент – подтягиваем их с Bybit
+    if (ohlcv.length < limitNum) {
+      const fetched = await bybitApi.fetchOHLCV(
+        symbol,
+        timeframe as string,
+        undefined,
+        limitNum
+      );
+
+      // 3️⃣ Сохраняем свежие данные в БД (без дубликатов)
+      try {
+        const mapped = fetched.map(([ts, o, h, l, c, v]) => ({
+          symbol,
+          timeframe: timeframe as string,
+          timestamp: Number(ts),
+          open: Number(o),
+          high: Number(h),
+          low: Number(l),
+          close: Number(c),
+          volume: Number(v),
+        }));
+        await saveOHLCVBulk(symbol, timeframe as string, mapped);
+      } catch (dbErr) {
+        console.error('❌ Ошибка сохранения OHLCV в БД:', dbErr);
+      }
+
+      // Используем данные с биржи для ответа
+      ohlcv = fetched;
+    }
+
     res.json({
       success: true,
       data: ohlcv,
       symbol,
       timeframe,
-      count: ohlcv.length
+      count: ohlcv.length,
     });
   } catch (error: any) {
     res.status(500).json({
       success: false,
       error: error.message,
-      code: 'FETCH_OHLCV_ERROR'
+      code: 'FETCH_OHLCV_ERROR',
     });
   }
 });

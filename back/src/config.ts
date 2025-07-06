@@ -44,6 +44,6 @@ export const config = {
   strategies: {
     primary: process.env.PRIMARY_STRATEGY || 'openai', // 'openai', 'ml', 'hybrid'
     enableComparison: process.env.ENABLE_STRATEGY_COMPARISON === 'true',
-    confidenceThreshold: parseFloat(process.env.CONFIDENCE_THRESHOLD || '0.7'),
+    confidenceThreshold: parseFloat(process.env.CONFIDENCE_THRESHOLD || '0.51'),
   }
 }; 

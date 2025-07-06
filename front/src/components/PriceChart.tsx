@@ -38,23 +38,23 @@ export default function PriceChart({ symbol, timeframe = '1h', limit = 100 }: Pr
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchData = async (initial = false) => {
       try {
-        setLoading(true)
+        if (initial) setLoading(true)
         setError(null)
         const ohlcv = await api.getOHLCV(symbol, timeframe, limit)
         setData(ohlcv)
       } catch (err: any) {
         setError(err.message || 'Ошибка загрузки данных')
       } finally {
-        setLoading(false)
+        if (initial) setLoading(false)
       }
     }
 
-    fetchData()
-    
-    // Обновляем данные каждые 60 секунд
-    const interval = setInterval(fetchData, 60000)
+    fetchData(true)
+
+    // Обновляем данные каждые 120 секунд без перезапуска спиннера
+    const interval = setInterval(() => fetchData(false), 120000)
     return () => clearInterval(interval)
   }, [symbol, timeframe, limit])
 

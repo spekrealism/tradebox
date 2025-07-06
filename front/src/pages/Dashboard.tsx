@@ -38,9 +38,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (initial = false) => {
     try {
-      setLoading(true)
+      if (initial) setLoading(true)
       setError(null)
 
       const [health, ticker, mlHealth] = await Promise.all([
@@ -68,15 +68,15 @@ export default function Dashboard() {
       setError(err.message || 'Ошибка загрузки данных')
       console.error('Dashboard error:', err)
     } finally {
-      setLoading(false)
+      if (initial) setLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchDashboardData()
-    
-    // Обновляем данные каждые 30 секунд
-    const interval = setInterval(fetchDashboardData, 30000)
+    fetchDashboardData(true)
+
+    // Обновляем данные каждые 30 секунд без переключения в режим loading
+    const interval = setInterval(() => fetchDashboardData(false), 30000)
     return () => clearInterval(interval)
   }, [])
 

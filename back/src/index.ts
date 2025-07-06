@@ -13,15 +13,15 @@ async function main() {
       console.log("📡 Настройка WebSocket подписок...");
       
       // Подписка на тикер BTC/USDT
-      bybitApi.subscribeToTicker('BTCUSDT', (data: any) => {
-        if (process.env.ENABLE_WEBSOCKET_LOGS === 'true') {
-          console.log('📊 Тикер BTCUSDT:', {
-            price: data.data?.lastPrice,
-            volume: data.data?.volume24h,
-            timestamp: new Date(data.ts).toISOString()
-          });
-        }
-      });
+      // bybitApi.subscribeToTicker('BTCUSDT', (data: any) => {
+      //   if (process.env.ENABLE_WEBSOCKET_LOGS === 'true') {
+      //     console.log('📊 Тикер BTCUSDT:', {
+      //       price: data.data?.lastPrice,
+      //       volume: data.data?.volume24h,
+      //       timestamp: new Date(data.ts).toISOString()
+      //     });
+      //   }
+      // });
 
       // Подписка на книгу ордеров
       bybitApi.subscribeToOrderBook('BTCUSDT', 25, (data: any) => {
