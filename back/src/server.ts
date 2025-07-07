@@ -414,8 +414,12 @@ if (config.ml.enabled) {
     try {
       const { symbol = 'BTCUSDT', limit = config.ml.trainDataLimit } = req.body;
       
-      // Получаем исторические данные для обучения
-      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+      // Вычисляем timestamp "since" для получения последних limit свечей
+      const timeframeMs = 60 * 60 * 1000; // 1h
+      const since = Date.now() - limit * timeframeMs;
+
+      // Получаем исторические данные для обучения – последние limit свечей
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', since, limit);
       
       const trainData = {
         ohlcv: ohlcv.map(([timestamp, open, high, low, close, volume]) => ({

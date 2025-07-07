@@ -9,6 +9,9 @@ RUN npm install
 # Копируем исходный код
 COPY . .
 
+# Явно копируем иконку
+COPY public/favicon.png public/favicon.png
+
 # Экспортируем порт
 EXPOSE 3001
 

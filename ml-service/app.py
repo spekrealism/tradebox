@@ -15,6 +15,7 @@ from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 import ta
 from datetime import datetime, timedelta
+from tensorflow.keras.callbacks import EarlyStopping
 
 app = Flask(__name__)
 CORS(app)
@@ -155,6 +156,15 @@ class BTCUSDTMLModel:
         """
         Обучение MLP и LSTM моделей
         """
+        # Логируем объём и диапазон входных данных
+        print(f'🛠️  Запуск обучения. Кол-во записей: {len(df)}')
+        if len(df) > 0:
+            print(f'   ↳ Диапазон дат: {df.index[0]} — {df.index[-1]}')
+
+        # Проверка достаточности данных
+        if len(df) < 1000:
+            raise ValueError(f'Недостаточно данных для обучения: {len(df)} < 1000')
+        
         # Подготовка данных
         df = self.calculate_technical_indicators(df)
         df = df.dropna()
@@ -178,6 +188,8 @@ class BTCUSDTMLModel:
         X_scaled = self.feature_scaler.fit_transform(X_features)
         
         # Обучение MLP
+        mlp_max_iter = int(os.getenv('MLP_MAX_ITER', '300'))
+
         self.mlp_model = MLPClassifier(
             hidden_layer_sizes=(100, 50, 25),
             activation='relu',
@@ -186,7 +198,7 @@ class BTCUSDTMLModel:
             batch_size='auto',
             learning_rate='constant',
             learning_rate_init=0.001,
-            max_iter=1000,
+            max_iter=mlp_max_iter,
             random_state=42
         )
         
@@ -195,6 +207,9 @@ class BTCUSDTMLModel:
         # Создание и обучение LSTM для предсказания цен
         X_lstm, y_lstm = self.create_lstm_features(df)
         
+        lstm_epochs = int(os.getenv('LSTM_EPOCHS', '30'))
+        early_stop = EarlyStopping(monitor='loss', patience=5, restore_best_weights=True)
+
         self.lstm_model = Sequential([
             LSTM(50, return_sequences=True, input_shape=(X_lstm.shape[1], 1)),
             Dropout(0.2),
@@ -207,7 +222,14 @@ class BTCUSDTMLModel:
         
         self.lstm_model.compile(optimizer='adam', loss='mean_squared_error')
         X_lstm = X_lstm.reshape((X_lstm.shape[0], X_lstm.shape[1], 1))
-        self.lstm_model.fit(X_lstm, y_lstm, epochs=100, batch_size=32, verbose=0)
+        self.lstm_model.fit(
+            X_lstm,
+            y_lstm,
+            epochs=lstm_epochs,
+            batch_size=32,
+            callbacks=[early_stop],
+            verbose=0
+        )
         
         # Сохранение статистики
         train_accuracy = self.mlp_model.score(X_scaled, y_labels)
@@ -414,6 +436,8 @@ def train_model():
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         df.set_index('timestamp', inplace=True)
         
+        print(f'➡️  Получен запрос на обучение. Размер df: {len(df)}')
+
         ml_model.train_models(df)
         
         return jsonify({
