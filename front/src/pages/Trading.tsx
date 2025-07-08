@@ -5,18 +5,13 @@ import {
   Grid,
   Card,
   CardContent,
-  Button,
   TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Alert,
   CircularProgress,
   Divider,
   Chip,
 } from '@mui/material'
-import { TrendingUp, TrendingDown, AutoAwesome, AccountBalance } from '@mui/icons-material'
+import { TrendingUp, TrendingDown, AccountBalance } from '@mui/icons-material'
 import { api } from '../services/api'
 
 export default function Trading() {
@@ -32,6 +27,7 @@ export default function Trading() {
     price: '',
     type: 'market',
   })
+  const [lastTradeTimestamp, setLastTradeTimestamp] = useState<number | null>(null)
 
   const fetchTradingData = async () => {
     try {
@@ -52,42 +48,22 @@ export default function Trading() {
         setPositions(positionsData)
         setOrders(ordersData)
       }
+
+      // Автоматическое выполнение сделки, если есть новый сигнал
+      if (
+        mlPrediction &&
+        mlPrediction.signal !== 'HOLD' &&
+        mlPrediction.timestamp !== lastTradeTimestamp
+      ) {
+        try {
+          await api.autoTrade('BTCUSDT', parseFloat(orderForm.amount), true)
+          setLastTradeTimestamp(mlPrediction.timestamp)
+        } catch (err) {
+          console.error('Auto trade error:', err)
+        }
+      }
     } catch (error) {
       console.error('Trading data fetch error:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleMLTrade = async () => {
-    if (!mlSignal || mlSignal.signal === 'HOLD') return
-    
-    try {
-      setLoading(true)
-      const result = await api.autoTrade('BTCUSDT', parseFloat(orderForm.amount), true)
-      console.log('ML Trade result:', result)
-      await fetchTradingData()
-    } catch (error) {
-      console.error('ML Trade error:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleManualOrder = async () => {
-    try {
-      setLoading(true)
-      const result = await api.createOrder({
-        symbol: orderForm.symbol,
-        side: orderForm.side as 'buy' | 'sell',
-        amount: parseFloat(orderForm.amount),
-        price: orderForm.price ? parseFloat(orderForm.price) : undefined,
-        type: orderForm.type as 'limit' | 'market',
-      })
-      console.log('Manual order result:', result)
-      await fetchTradingData()
-    } catch (error) {
-      console.error('Manual order error:', error)
     } finally {
       setLoading(false)
     }
@@ -105,7 +81,7 @@ export default function Trading() {
 
       <Grid container spacing={3}>
         {/* ML Trading Section */}
-        <Grid item xs={12} lg={6}>
+        <Grid item xs={12}>
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
@@ -134,108 +110,16 @@ export default function Trading() {
                     margin="normal"
                     size="small"
                   />
-                  
-                  <Button
-                    variant="contained"
-                    startIcon={<AutoAwesome />}
-                    onClick={handleMLTrade}
-                    disabled={loading || !mlSignal || mlSignal.signal === 'HOLD'}
-                    fullWidth
-                    sx={{ mt: 2 }}
-                  >
-                    Выполнить ML Сделку
-                  </Button>
+
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    Сделка будет выполнена автоматически при появлении сигнала
+                  </Alert>
                 </Box>
               ) : (
                 <Alert severity="warning">
                   ML модель недоступна
                 </Alert>
               )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Manual Trading Section */}
-        <Grid item xs={12} lg={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                🎯 Ручная Торговля
-              </Typography>
-              
-              <Grid container spacing={2}>
-                <Grid item xs={12}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Символ</InputLabel>
-                    <Select
-                      value={orderForm.symbol}
-                      onChange={(e) => setOrderForm({ ...orderForm, symbol: e.target.value })}
-                    >
-                      <MenuItem value="BTCUSDT">BTC/USDT</MenuItem>
-                      <MenuItem value="ETHUSDT">ETH/USDT</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-                
-                <Grid item xs={6}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Направление</InputLabel>
-                    <Select
-                      value={orderForm.side}
-                      onChange={(e) => setOrderForm({ ...orderForm, side: e.target.value })}
-                    >
-                      <MenuItem value="buy">Покупка</MenuItem>
-                      <MenuItem value="sell">Продажа</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-                
-                <Grid item xs={6}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Тип</InputLabel>
-                    <Select
-                      value={orderForm.type}
-                      onChange={(e) => setOrderForm({ ...orderForm, type: e.target.value })}
-                    >
-                      <MenuItem value="market">Рыночный</MenuItem>
-                      <MenuItem value="limit">Лимитный</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-                
-                <Grid item xs={6}>
-                  <TextField
-                    label="Количество"
-                    type="number"
-                    value={orderForm.amount}
-                    onChange={(e) => setOrderForm({ ...orderForm, amount: e.target.value })}
-                    fullWidth
-                    size="small"
-                  />
-                </Grid>
-                
-                <Grid item xs={6}>
-                  <TextField
-                    label="Цена (для лимитных)"
-                    type="number"
-                    value={orderForm.price}
-                    onChange={(e) => setOrderForm({ ...orderForm, price: e.target.value })}
-                    disabled={orderForm.type === 'market'}
-                    fullWidth
-                    size="small"
-                  />
-                </Grid>
-              </Grid>
-              
-              <Button
-                variant="contained"
-                onClick={handleManualOrder}
-                disabled={loading}
-                fullWidth
-                sx={{ mt: 2 }}
-              >
-                Создать Ордер
-              </Button>
             </CardContent>
           </Card>
         </Grid>
