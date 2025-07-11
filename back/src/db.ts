@@ -202,7 +202,7 @@ export async function fetchOHLCVFromDb(symbol: string, timeframe: string, limit:
 
   // Возвращаем в обратном порядке (от старых к новым)
   return rows.reverse().map(r => [
-    new Date(r.timestamp).getTime(),
+    Number(r.timestamp),
     Number(r.open),
     Number(r.high),
     Number(r.low),

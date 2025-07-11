@@ -10,6 +10,7 @@ import {
   Tooltip,
   Legend,
   TimeScale,
+  Filler,
 } from 'chart.js'
 import 'chartjs-adapter-date-fns'
 import { Box, CircularProgress, Alert } from '@mui/material'
@@ -23,7 +24,8 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  TimeScale
+  TimeScale,
+  Filler
 )
 
 interface PriceChartProps {

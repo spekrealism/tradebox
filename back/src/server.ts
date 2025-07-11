@@ -88,34 +88,53 @@ app.get('/api/ohlcv/:symbol', async (req, res) => {
     // 1️⃣ Пытаемся получить данные из TimescaleDB
     let ohlcv: any[] = await fetchOHLCVFromDb(symbol, timeframe as string, limitNum);
 
-    // 2️⃣ Если данных меньше, чем запрашивал клиент – подтягиваем их с Bybit
-    if (ohlcv.length < limitNum) {
+    // Функция для перевода таймфрейма в миллисекунды
+    const tfToMs: Record<string, number> = {
+      '1m': 60 * 1000,
+      '5m': 5 * 60 * 1000,
+      '15m': 15 * 60 * 1000,
+      '30m': 30 * 60 * 1000,
+      '1h': 60 * 60 * 1000,
+      '4h': 4 * 60 * 60 * 1000,
+      '1d': 24 * 60 * 60 * 1000,
+    };
+
+    const tfMs = tfToMs[timeframe as string] || 60 * 60 * 1000;
+
+    // 2️⃣ Если данных меньше, чем limit, или последняя свеча старее одной-трёх длительностей – подтягиваем свежие данные
+    const now = Date.now();
+    const lastTs = ohlcv.length ? ohlcv[ohlcv.length - 1][0] : 0;
+
+    if (ohlcv.length < limitNum || now - lastTs > tfMs * 2) {
+      const since = lastTs ? lastTs + tfMs : undefined;
       const fetched = await bybitApi.fetchOHLCV(
         symbol,
         timeframe as string,
-        undefined,
+        since,
         limitNum
       );
 
-      // 3️⃣ Сохраняем свежие данные в БД (без дубликатов)
-      try {
-        const mapped = fetched.map(([ts, o, h, l, c, v]) => ({
-          symbol,
-          timeframe: timeframe as string,
-          timestamp: Number(ts),
-          open: Number(o),
-          high: Number(h),
-          low: Number(l),
-          close: Number(c),
-          volume: Number(v),
-        }));
-        await saveOHLCVBulk(symbol, timeframe as string, mapped);
-      } catch (dbErr) {
-        console.error('❌ Ошибка сохранения OHLCV в БД:', dbErr);
-      }
+      // Сохраняем новые свечи
+      if (fetched.length) {
+        try {
+          const mapped = fetched.map(([ts, o, h, l, c, v]) => ({
+            symbol,
+            timeframe: timeframe as string,
+            timestamp: Number(ts),
+            open: Number(o),
+            high: Number(h),
+            low: Number(l),
+            close: Number(c),
+            volume: Number(v),
+          }));
+          await saveOHLCVBulk(symbol, timeframe as string, mapped);
+        } catch (dbErr) {
+          console.error('❌ Ошибка сохранения OHLCV в БД:', dbErr);
+        }
 
-      // Используем данные с биржи для ответа
-      ohlcv = fetched;
+        // Объединяем с существующими и берём последние limitNum
+        ohlcv = [...ohlcv, ...fetched].slice(-limitNum);
+      }
     }
 
     res.json({
@@ -376,10 +395,11 @@ if (config.ml.enabled) {
   // Получение ML прогноза
   app.post('/api/ml/predict', async (req, res) => {
     try {
-      const { symbol = 'BTCUSDT', limit = 100 } = req.body;
+      let { symbol = 'BTCUSDT', limit = 100 } = req.body;
+      if (limit < 300) limit = 300; // ML модели нужно >= 300 свечей после фильтрации
       
       // Получаем исторические данные
-      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', undefined, limit);
       const currentPrice = (await bybitApi.fetchTicker(symbol)).last;
       
       const input = {
@@ -454,9 +474,10 @@ if (config.ml.enabled) {
   // Получение технических индикаторов
   app.post('/api/ml/indicators', async (req, res) => {
     try {
-      const { symbol = 'BTCUSDT', limit = 100 } = req.body;
+      let { symbol = 'BTCUSDT', limit = 100 } = req.body;
+      if (limit < 300) limit = 300;
       
-      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', undefined, limit);
       const currentPrice = (await bybitApi.fetchTicker(symbol)).last;
       
       const input = {
@@ -524,7 +545,7 @@ if (config.ml.enabled) {
       }
 
       // Получаем прогноз
-      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', 100);
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', undefined, 300);
       const currentPrice = (await bybitApi.fetchTicker(symbol)).last;
       
              const input = {
@@ -653,7 +674,7 @@ if (config.openai.enabled) {
     try {
       const { symbol = 'BTCUSDT', limit = 100 } = req.body;
       
-      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', undefined, limit);
       const ticker = await bybitApi.fetchTicker(symbol);
       const currentPrice = Number(ticker.last);
       
@@ -722,7 +743,7 @@ app.post('/api/strategy/predict', async (req, res) => {
   try {
     const { symbol = 'BTCUSDT', limit = 100 } = req.body;
     
-    const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+    const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', undefined, limit);
     const ticker = await bybitApi.fetchTicker(symbol);
     const currentPrice = Number(ticker.last);
     
@@ -764,7 +785,7 @@ app.post('/api/strategy/compare', async (req, res) => {
   try {
     const { symbol = 'BTCUSDT', limit = 100 } = req.body;
     
-    const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', limit);
+    const ohlcv = await bybitApi.fetchOHLCV(symbol, '1h', undefined, limit);
     const ticker = await bybitApi.fetchTicker(symbol);
     const currentPrice = Number(ticker.last);
     
