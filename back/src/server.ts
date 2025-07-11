@@ -9,6 +9,7 @@ import { OpenAITradingStrategy, MarketData } from './strategies/openai-strategy'
 import { StrategyManager } from './strategies/strategy-manager';
 import { initDb, fetchOHLCVFromDb, saveOHLCVBulk } from './db';
 import { startCollector } from './jobs/ohlcv-collector';
+import { botManager } from './core/bot-manager';
 
 const app = express();
 
@@ -847,6 +848,227 @@ app.get('/api/agents/status', async (req, res) => {
   }
 });
 
+// Endpoints для управления торговыми ботами
+
+// Создание нового торгового бота
+app.post('/api/bots', requireApiKey, async (req, res) => {
+  try {
+    const { name, description, strategy, tradingPairs, positionSize, maxDrawdown, riskLevel, initialBalance } = req.body;
+    
+    if (!name || !strategy || !tradingPairs || !positionSize || !initialBalance) {
+      return res.status(400).json({
+        success: false,
+        error: 'Отсутствуют обязательные поля: name, strategy, tradingPairs, positionSize, initialBalance',
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
+
+    const botId = await botManager.createBot({
+      name,
+      description,
+      strategy,
+      tradingPairs,
+      positionSize: Number(positionSize),
+      maxDrawdown: Number(maxDrawdown) || 10,
+      riskLevel: riskLevel || 'medium',
+      initialBalance: Number(initialBalance)
+    });
+
+    res.json({
+      success: true,
+      data: { botId },
+      message: `Торговый бот "${name}" создан успешно`
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'CREATE_BOT_ERROR'
+    });
+  }
+});
+
+// Получение списка всех ботов
+app.get('/api/bots', async (req, res) => {
+  try {
+    const bots = await botManager.getAllBots();
+    
+    res.json({
+      success: true,
+      data: bots,
+      count: bots.length
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'GET_BOTS_ERROR'
+    });
+  }
+});
+
+// Получение информации о конкретном боте
+app.get('/api/bots/:botId', async (req, res) => {
+  try {
+    const { botId } = req.params;
+    const bot = await botManager.getBotById(botId);
+    
+    if (!bot) {
+      return res.status(404).json({
+        success: false,
+        error: 'Бот не найден',
+        code: 'BOT_NOT_FOUND'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: bot
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'GET_BOT_ERROR'
+    });
+  }
+});
+
+// Запуск торгового бота
+app.post('/api/bots/:botId/start', requireApiKey, async (req, res) => {
+  try {
+    const { botId } = req.params;
+    await botManager.startBot(botId);
+    
+    res.json({
+      success: true,
+      message: 'Торговый бот запущен'
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'START_BOT_ERROR'
+    });
+  }
+});
+
+// Остановка торгового бота
+app.post('/api/bots/:botId/stop', requireApiKey, async (req, res) => {
+  try {
+    const { botId } = req.params;
+    await botManager.stopBot(botId);
+    
+    res.json({
+      success: true,
+      message: 'Торговый бот остановлен'
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'STOP_BOT_ERROR'
+    });
+  }
+});
+
+// Приостановка торгового бота
+app.post('/api/bots/:botId/pause', requireApiKey, async (req, res) => {
+  try {
+    const { botId } = req.params;
+    await botManager.pauseBot(botId);
+    
+    res.json({
+      success: true,
+      message: 'Торговый бот приостановлен'
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'PAUSE_BOT_ERROR'
+    });
+  }
+});
+
+// Удаление торгового бота
+app.delete('/api/bots/:botId', requireApiKey, async (req, res) => {
+  try {
+    const { botId } = req.params;
+    await botManager.deleteBot(botId);
+    
+    res.json({
+      success: true,
+      message: 'Торговый бот удален'
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'DELETE_BOT_ERROR'
+    });
+  }
+});
+
+// Получение баланса торгового бота
+app.get('/api/bots/:botId/balance', requireApiKey, async (req, res) => {
+  try {
+    const { botId } = req.params;
+    const balance = await botManager.getBotBalance(botId);
+    
+    res.json({
+      success: true,
+      data: balance
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'GET_BOT_BALANCE_ERROR'
+    });
+  }
+});
+
+// Получение истории сделок торгового бота
+app.get('/api/bots/:botId/trades', async (req, res) => {
+  try {
+    const { botId } = req.params;
+    const { limit = 100 } = req.query;
+    
+    const trades = await botManager.getBotTradeHistory(botId, Number(limit));
+    
+    res.json({
+      success: true,
+      data: trades,
+      count: trades.length
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'GET_BOT_TRADES_ERROR'
+    });
+  }
+});
+
+// Получение списка суб-аккаунтов
+app.get('/api/subaccounts', requireApiKey, async (req, res) => {
+  try {
+    const subAccounts = await bybitApi.getSubAccounts();
+    
+    res.json({
+      success: true,
+      data: subAccounts
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'GET_SUBACCOUNTS_ERROR'
+    });
+  }
+});
+
 // Обработка ошибок
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Необработанная ошибка:', err);
@@ -877,6 +1099,9 @@ export const startServer = async (): Promise<void> => {
 
     // Запуск планировщика сбора OHLCV
     startCollector();
+
+    // Инициализация менеджера ботов
+    console.log('🤖 Инициализация менеджера торговых ботов...');
     
     app.listen(config.server.port, () => {
       console.log(`🚀 Сервер запущен на порту ${config.server.port}`);
@@ -891,14 +1116,16 @@ export const startServer = async (): Promise<void> => {
 };
 
 // Грациозное отключение
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('Получен SIGTERM, закрытие соединений...');
+  await botManager.cleanup();
   bybitApi.disconnect();
   process.exit(0);
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('Получен SIGINT, закрытие соединений...');
+  await botManager.cleanup();
   bybitApi.disconnect();
   process.exit(0);
 });

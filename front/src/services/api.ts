@@ -96,6 +96,57 @@ export interface TickerData {
   percentage: number
 }
 
+export interface TradingBot {
+  id: string
+  name: string
+  description?: string
+  strategy: 'ml' | 'openai' | 'custom'
+  status: 'active' | 'paused' | 'stopped' | 'error'
+  subAccountId: string
+  subAccountUsername: string
+  tradingPairs: string[]
+  positionSize: number
+  maxDrawdown: number
+  riskLevel: 'low' | 'medium' | 'high'
+  totalTrades: number
+  winningTrades: number
+  totalPnL: number
+  currentBalance: number
+  initialBalance: number
+  createdAt: string
+  updatedAt: string
+  lastTradeAt?: string
+}
+
+export interface TradeRecord {
+  id: string
+  botId: string
+  symbol: string
+  side: 'buy' | 'sell'
+  amount: number
+  price: number
+  timestamp: string
+  orderId: string
+  pnl?: number
+  fees?: number
+  signal?: {
+    type: 'ml' | 'openai'
+    confidence: number
+    reasoning: string
+  }
+}
+
+export interface CreateBotRequest {
+  name: string
+  description?: string
+  strategy: 'ml' | 'openai'
+  tradingPairs: string[]
+  positionSize: number
+  maxDrawdown: number
+  riskLevel: 'low' | 'medium' | 'high'
+  initialBalance: number
+}
+
 // API Methods
 export const api = {
   // Health check
@@ -177,6 +228,53 @@ export const api = {
     type?: 'limit' | 'market'
   }): Promise<any> => {
     const response = await apiClient.post('/api/order', orderData)
+    return response.data.data
+  },
+
+  // Bot management endpoints
+  getBots: async (): Promise<TradingBot[]> => {
+    const response = await apiClient.get('/api/bots')
+    return response.data.data
+  },
+
+  getBot: async (botId: string): Promise<TradingBot> => {
+    const response = await apiClient.get(`/api/bots/${botId}`)
+    return response.data.data
+  },
+
+  createBot: async (botData: CreateBotRequest): Promise<{ botId: string }> => {
+    const response = await apiClient.post('/api/bots', botData)
+    return response.data.data
+  },
+
+  startBot: async (botId: string): Promise<void> => {
+    await apiClient.post(`/api/bots/${botId}/start`)
+  },
+
+  stopBot: async (botId: string): Promise<void> => {
+    await apiClient.post(`/api/bots/${botId}/stop`)
+  },
+
+  pauseBot: async (botId: string): Promise<void> => {
+    await apiClient.post(`/api/bots/${botId}/pause`)
+  },
+
+  deleteBot: async (botId: string): Promise<void> => {
+    await apiClient.delete(`/api/bots/${botId}`)
+  },
+
+  getBotBalance: async (botId: string): Promise<any> => {
+    const response = await apiClient.get(`/api/bots/${botId}/balance`)
+    return response.data.data
+  },
+
+  getBotTrades: async (botId: string, limit: number = 100): Promise<TradeRecord[]> => {
+    const response = await apiClient.get(`/api/bots/${botId}/trades?limit=${limit}`)
+    return response.data.data
+  },
+
+  getSubAccounts: async (): Promise<any> => {
+    const response = await apiClient.get('/api/subaccounts')
     return response.data.data
   },
 }

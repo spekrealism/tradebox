@@ -278,6 +278,139 @@ class BybitApi {
       private: this.privateWs.isConnected()
     };
   }
+
+  // Методы для работы с суб-аккаунтами
+  public async createSubAccount(username: string, memberType: 1 | 6 = 1, note?: string): Promise<any> {
+    return this.makeRequest(async () => {
+      if (!config.bybit.apiKey) {
+        throw new Error('API ключ не настроен для операций с суб-аккаунтами');
+      }
+
+      const params = {
+        username,
+        memberType, // 1 - нормальный суб-аккаунт, 6 - кастодиальный
+        ...(note && { note })
+      };
+
+      // Используем приватный эндпоинт Bybit V5 для создания суб-аккаунта
+      const response = await (this.exchange as any).privatePostV5UserCreateSubMember(params);
+      return response;
+    });
+  }
+
+  public async getSubAccounts(): Promise<any> {
+    return this.makeRequest(async () => {
+      if (!config.bybit.apiKey) {
+        throw new Error('API ключ не настроен для операций с суб-аккаунтами');
+      }
+
+      const response = await (this.exchange as any).privateGetV5UserQuerySubMembers();
+      return response;
+    });
+  }
+
+  public async createSubAccountApiKey(subUid: string, permissions: string[] = ['Trade']): Promise<any> {
+    return this.makeRequest(async () => {
+      if (!config.bybit.apiKey) {
+        throw new Error('API ключ не настроен для операций с суб-аккаунтами');
+      }
+
+      const params = {
+        subuid: subUid,
+        readOnly: 0, // 0 - может торговать, 1 - только чтение
+        permissions: permissions.join(','), // 'Trade', 'Wallet', 'Options', 'Derivatives', 'CopyTrading', 'BlockTrade', 'Exchange', 'NFT'
+      };
+
+      const response = await (this.exchange as any).privatePostV5UserCreateSubApiKey(params);
+      return response;
+    });
+  }
+
+  public async getSubAccountBalance(subUid: string, accountType: string = 'UNIFIED'): Promise<any> {
+    return this.makeRequest(async () => {
+      if (!config.bybit.apiKey) {
+        throw new Error('API ключ не настроен для операций с суб-аккаунтами');
+      }
+
+      const params = {
+        memberId: subUid,
+        accountType // UNIFIED, CONTRACT, SPOT
+      };
+
+      const response = await (this.exchange as any).privateGetV5AssetTransferQuerySubMemberList(params);
+      return response;
+    });
+  }
+
+  public async transferToSubAccount(
+    subUid: string, 
+    coin: string, 
+    amount: string, 
+    fromAccountType: string = 'UNIFIED',
+    toAccountType: string = 'UNIFIED'
+  ): Promise<any> {
+    return this.makeRequest(async () => {
+      if (!config.bybit.apiKey) {
+        throw new Error('API ключ не настроен для операций с суб-аккаунтами');
+      }
+
+      const params = {
+        transferId: Date.now().toString(), // Уникальный ID трансфера
+        coin,
+        amount,
+        fromMemberId: await this.getCurrentUid(), // Главный аккаунт
+        toMemberId: subUid,
+        fromAccountType,
+        toAccountType
+      };
+
+      const response = await (this.exchange as any).privatePostV5AssetTransferInterTransfer(params);
+      return response;
+    });
+  }
+
+  public async getCurrentUid(): Promise<string> {
+    return this.makeRequest(async () => {
+      if (!config.bybit.apiKey) {
+        throw new Error('API ключ не настроен');
+      }
+
+      const response = await (this.exchange as any).privateGetV5UserQueryApi();
+      return response.result.uid;
+    });
+  }
+
+  // Создание экземпляра для конкретного суб-аккаунта
+  public createSubAccountInstance(apiKey: string, secret: string): BybitApi {
+    const subAccountConfig = {
+      ...config,
+      bybit: {
+        ...config.bybit,
+        apiKey,
+        apiSecret: secret
+      }
+    };
+
+    // Создаем новый экземпляр с конфигурацией суб-аккаунта
+    const subAccountApi = new BybitApi();
+    
+    // Переопределяем exchange для суб-аккаунта
+    const exchangeOptions = {
+      apiKey,
+      secret,
+      options: {
+        recvWindow: 10000,
+      }
+    };
+
+    subAccountApi.exchange = new ccxt.bybit(exchangeOptions);
+    
+    if (config.bybit.testnet) {
+      subAccountApi.exchange.setSandboxMode(true);
+    }
+
+    return subAccountApi;
+  }
 }
 
 export const bybitApi = new BybitApi(); 
