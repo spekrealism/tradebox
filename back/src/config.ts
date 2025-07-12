@@ -28,10 +28,7 @@ export const config = {
     trainDataLimit: parseInt(process.env.ML_TRAIN_DATA_LIMIT || '1000'),
   },
   db: {
-    host: process.env.DB_HOST || 'db',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    user: process.env.DB_USER || 'user',
-    password: process.env.DB_PASSWORD || 'password',
+    uri: process.env.MONGODB_URI || 'mongodb://mongo:27017',
     database: process.env.DB_NAME || 'trading_db',
   },
   openai: {

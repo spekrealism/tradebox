@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
     depends_on:
       - ml-service
-      - db
+      - mongo
       - redis
     networks:
       - trading_network
@@ -71,18 +71,16 @@ services:
     networks:
       - trading_network
 
-  # TimescaleDB for historical data
-  db:
-    image: timescale/timescaledb:latest-pg14
-    container_name: trading_db
+  # MongoDB for data storage
+  mongo:
+    image: mongo:6.0
+    container_name: trading_mongo
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: trading_db
+      MONGO_INITDB_DATABASE: trading_db
     ports:
-      - "5433:5432"
+      - "27017:27017"
     volumes:
-      - timescaledb_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
     restart: unless-stopped
     networks:
       - trading_network
@@ -100,7 +98,7 @@ services:
       - trading_network
 
 volumes:
-  timescaledb_data:
+  mongo_data:
   redis_data:
   ml-models:
 
