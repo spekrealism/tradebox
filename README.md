@@ -1,8 +1,8 @@
- # 🚀 Crypto Trading Bot с ML
+# 🚀 Crypto Trading Bot with ML
 
-Автоматизированная система торговли криптовалютами с поддержкой машинного обучения, основанная на модели из [GitHub репозитория](https://github.com/zaid-24/Algorithmic-Trading-Model-For-BTC-USDT-Crypto-Market-).
+Automated cryptocurrency trading system with machine learning support, based on the model from [GitHub repository](https://github.com/zaid-24/Algorithmic-Trading-Model-For-BTC-USDT-Crypto-Market-).
 
-## 🏗 Архитектура
+## 🏗 Architecture
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
@@ -14,32 +14,32 @@
                     │                       │
               ┌─────────────┐       ┌─────────────┐
               │ TimescaleDB │       │    Redis    │
-              │ (История)   │       │   (Кэш)     │
+              │ (History)   │       │   (Cache)   │
               └─────────────┘       └─────────────┘
 ```
 
-## 🎯 Возможности
+## 🎯 Features
 
-- **🤖 ML Торговля**: MLP Classifier + LSTM для прогнозов
-- **📊 Технические Индикаторы**: RSI, Bollinger Bands, EMA, Ultimate Oscillator
-- **💼 Автоматическая Торговля**: Stop-loss стратегии на основе ATR
-- **📈 Веб-интерфейс**: Современный React фронтенд с графиками
-- **🔐 Безопасность**: Rate limiting, CORS, API ключи
-- **🐳 Docker**: Полная контейнеризация всех сервисов
+- **🤖 ML Trading**: MLP Classifier + LSTM for predictions
+- **📊 Technical Indicators**: RSI, Bollinger Bands, EMA, Ultimate Oscillator
+- **💼 Automated Trading**: Stop-loss strategies based on ATR
+- **📈 Web Interface**: Modern React frontend with charts
+- **🔐 Security**: Rate limiting, CORS, API keys
+- **🐳 Docker**: Full containerization of all services
 
-## 🚀 Быстрый Запуск
+## 🚀 Quick Start
 
-### 1. Клонирование и настройка
+### 1. Cloning and Setup
 
 ```bash
 git clone <your-repo>
 cd crypto-trading-bot
 
-# Создание .env файла для бэкенда
+# Create .env file for backend
 cp back/.env.example back/.env
 ```
 
-### 2. Настройка переменных окружения
+### 2. Environment Variables Setup
 
 ```bash
 # back/.env
@@ -56,89 +56,89 @@ PORT=3000
 LOG_LEVEL=info
 ```
 
-### 3. Запуск с Docker Compose
+### 3. Running with Docker Compose
 
 ```bash
-# Запуск всех сервисов
+# Start all services
 docker-compose up -d
 
-# Проверка статуса
+# Check status
 docker-compose ps
 
-# Просмотр логов
+# View logs
 docker-compose logs -f
 ```
 
-### 4. Доступ к приложению
+### 4. Access to Application
 
 - **Frontend**: http://localhost:3001
 - **Backend API**: http://localhost:3000
 - **ML Service**: http://localhost:5000
 
-## 📱 Интерфейс
+## 📱 Interface
 
-### Дашборд
-- Статус системы и WebSocket соединений
-- Текущая цена BTC/USDT
-- ML прогнозы в реальном времени
-- График цен
+### Dashboard
+- System status and WebSocket connections
+- Current BTC/USDT price
+- Real-time ML predictions
+- Price chart
 
-### Торговая Панель
-- ML автоторговля с настраиваемыми параметрами
-- Ручное создание ордеров
-- Просмотр баланса и позиций
+### Trading Panel
+- ML auto-trading with configurable parameters
+- Manual order creation
+- Balance and positions view
 
-### ML Анализ
-- Статус и метрики модели
-- Обучение на новых данных
-- Технические индикаторы
-- Детальные прогнозы
+### ML Analysis
+- Model status and metrics
+- Training on new data
+- Technical indicators
+- Detailed predictions
 
-### Настройки
-- Конфигурация системы
-- ML параметры
-- Статус соединений
+### Settings
+- System configuration
+- ML parameters
+- Connection status
 
-## 🧠 ML Модель
+## 🧠 ML Model
 
-### Компоненты
-- **MLP Classifier**: 3 слоя (100, 50, 25 нейронов)
-- **LSTM**: Предсказание будущих цен
-- **Технические Индикаторы**: 15+ индикаторов
-- **Labeling**: Future/past окна для меток
+### Components
+- **MLP Classifier**: 3 layers (100, 50, 25 neurons)
+- **LSTM**: Future price prediction
+- **Technical Indicators**: 15+ indicators
+- **Labeling**: Future/past windows for labels
 
-### Результаты (из оригинального исследования)
+### Results (from original research)
 - **Sharpe Ratio**: 1.93
 - **Win Rate**: 84.02%
 - **Max Drawdown**: 8.95%
 
 ## 🔧 API Endpoints
 
-### Основные
+### Main
 ```bash
-GET  /health                    # Статус системы
-GET  /api/ticker/BTCUSDT       # Цена BTC
-GET  /api/ohlcv/BTCUSDT        # OHLCV данные
+GET  /health                    # System status
+GET  /api/ticker/BTCUSDT       # BTC price
+GET  /api/ohlcv/BTCUSDT        # OHLCV data
 ```
 
 ### ML
 ```bash
-POST /api/ml/predict           # Получить прогноз
-POST /api/ml/train            # Обучить модель
-GET  /api/ml/health           # Статус ML
-POST /api/ml/auto-trade       # Автоторговля
+POST /api/ml/predict           # Get prediction
+POST /api/ml/train            # Train model
+GET  /api/ml/health           # ML status
+POST /api/ml/auto-trade       # Auto-trading
 ```
 
-### Торговля (требуют API ключи)
+### Trading (requires API keys)
 ```bash
-GET  /api/balance             # Баланс
-GET  /api/positions           # Позиции
-POST /api/order               # Создать ордер
+GET  /api/balance             # Balance
+GET  /api/positions           # Positions
+POST /api/order               # Create order
 ```
 
-## 🛠 Разработка
+## 🛠 Development
 
-### Локальный запуск
+### Local Run
 
 ```bash
 # Backend
@@ -157,37 +157,37 @@ pip install -r requirements.txt
 python app.py
 ```
 
-### Структура проекта
+### Project Structure
 
 ```
 ├── back/                   # Node.js Backend
 │   ├── src/
-│   │   ├── api/           # Bybit API интеграция
-│   │   ├── strategies/    # ML стратегии
-│   │   └── server.ts      # Express сервер
+│   │   ├── api/           # Bybit API integration
+│   │   ├── strategies/    # ML strategies
+│   │   └── server.ts      # Express server
 │   └── package.json
 ├── front/                 # React Frontend
 │   ├── src/
-│   │   ├── components/    # UI компоненты
-│   │   ├── pages/         # Страницы
-│   │   └── services/      # API клиенты
+│   │   ├── components/    # UI components
+│   │   ├── pages/         # Pages
+│   │   └── services/      # API clients
 │   └── package.json
 ├── ml-service/           # Python ML Service
 │   ├── app.py           # Flask API
 │   ├── requirements.txt
 │   └── Dockerfile
-└── docker-compose.yml   # Оркестрация
+└── docker-compose.yml   # Orchestration
 ```
 
-## ⚠️ Безопасность
+## ⚠️ Security
 
-1. **ВСЕГДА тестируйте на testnet** перед реальной торговлей
-2. **Используйте маленькие суммы** для начальных тестов
-3. **Не коммитьте API ключи** в репозиторий
-4. **Мониторьте производительность** модели
-5. **Регулярно переобучайте** модель
+1. **ALWAYS test on testnet** before real trading
+2. **Use small amounts** for initial tests
+3. **Don't commit API keys** to repository
+4. **Monitor model performance**
+5. **Regularly retrain** the model
 
-## 📊 Мониторинг
+## 📊 Monitoring
 
 ### Health Checks
 ```bash
@@ -196,85 +196,85 @@ curl http://localhost:5000/health      # ML Service
 curl http://localhost:3001             # Frontend
 ```
 
-### Логи
+### Logs
 ```bash
-docker-compose logs -f backend     # Backend логи
-docker-compose logs -f ml-service  # ML логи
-docker-compose logs -f frontend    # Frontend логи
+docker-compose logs -f backend     # Backend logs
+docker-compose logs -f ml-service  # ML logs
+docker-compose logs -f frontend    # Frontend logs
 ```
 
-## 🤝 Разработка
+## 🤝 Development
 
-### Добавление новых индикаторов
-1. Обновите `ml-service/app.py`
-2. Добавьте расчет в `calculate_technical_indicators`
-3. Обновите интерфейсы в `front/src/services/api.ts`
+### Adding New Indicators
+1. Update `ml-service/app.py`
+2. Add calculation in `calculate_technical_indicators`
+3. Update interfaces in `front/src/services/api.ts`
 
-### Новые стратегии
-1. Создайте файл в `back/src/strategies/`
-2. Интегрируйте с `server.ts`
-3. Добавьте UI в соответствующую страницу
+### New Strategies
+1. Create file in `back/src/strategies/`
+2. Integrate with `server.ts`
+3. Add UI to corresponding page
 
-## 📄 Лицензия
+## 📄 License
 
 MIT License
 
-## 🔗 Ссылки
+## 🔗 Links
 
-- [Оригинальная модель](https://github.com/zaid-24/Algorithmic-Trading-Model-For-BTC-USDT-Crypto-Market-)
+- [Original Model](https://github.com/zaid-24/Algorithmic-Trading-Model-For-BTC-USDT-Crypto-Market-)
 - [Bybit API](https://bybit-exchange.github.io/docs/)
 - [Material-UI](https://mui.com/)
 - [TensorFlow](https://www.tensorflow.org/)
 
 ---
 
-**⚠️ Дисклеймер**: Данное ПО предназначено только для образовательных целей. Торговля криптовалютами связана с высокими рисками.
+**⚠️ Disclaimer**: This software is intended for educational purposes only. Cryptocurrency trading involves high risks.
 
 
 
-# OpenAI настройки
+# OpenAI Settings
 OPENAI_ENABLED=true
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4-turbo-preview
 OPENAI_MAX_TOKENS=1000
 OPENAI_TEMPERATURE=0.7
 
-# Настройки стратегий
+# Strategy Settings
 PRIMARY_STRATEGY=openai
 ENABLE_STRATEGY_COMPARISON=true
 CONFIDENCE_THRESHOLD=0.7
 
-## ⚠️ Важные настройки API и Rate Limit
+## ⚠️ Important API and Rate Limit Settings
 
-### Настройки Rate Limit
+### Rate Limit Settings
 
-Для предотвращения блокировки IP адреса Bybit-ом, в системе настроены консервативные лимиты:
+To prevent IP blocking by Bybit, conservative limits are configured in the system:
 
-- **200 запросов в минуту** (вместо максимальных 600 запросов в 5 секунд)
-- **Экспоненциальная задержка** при получении ошибок rate limit
-- **Синхронизация времени** с сервером Bybit каждые 5 минут
+- **200 requests per minute** (instead of maximum 600 requests per 5 seconds)
+- **Exponential delay** when receiving rate limit errors
+- **Time synchronization** with Bybit server every 5 minutes
 
-### Основные изменения для стабильности
+### Main Changes for Stability
 
-1. **Планировщик OHLCV данных**: изменен с каждой минуты на каждые 5 минут
-2. **Лимит свечей**: уменьшен с 60 до 10 свечей за запрос
-3. **Задержки между символами**: 2 секунды между запросами разных символов
-4. **Retry логика**: автоматические повторы при ошибках с backoff
+1. **OHLCV Data Scheduler**: changed from every minute to every 5 minutes
+2. **Candle Limit**: reduced from 60 to 10 candles per request
+3. **Delays Between Symbols**: 2 seconds between requests for different symbols
+4. **Retry Logic**: automatic retries on errors with backoff
 
-### Рекомендации для разработки
+### Development Recommendations
 
-- **Используйте WebSocket** для получения данных в реальном времени вместо REST API
-- **Не делайте частые REST запросы** - максимум 1 запрос в 3 секунды
-- **Группируйте запросы** - не делайте их одновременно
-- **Мониторьте лимиты** - используйте `/api/rate-limit` для проверки состояния
+- **Use WebSocket** for real-time data instead of REST API
+- **Don't make frequent REST requests** - maximum 1 request per 3 seconds
+- **Group requests** - don't make them simultaneously
+- **Monitor limits** - use `/api/rate-limit` to check status
 
-### Как проверить состояние rate limit
+### How to Check Rate Limit Status
 
 ```bash
 curl http://localhost:3000/api/rate-limit
 ```
 
-Ответ:
+Response:
 ```json
 {
   "requests": 25,
@@ -284,19 +284,19 @@ curl http://localhost:3000/api/rate-limit
 }
 ```
 
-### Что делать при блокировке
+### What to Do When Blocked
 
-Если получили ошибку `Rate limit exceeded`:
+If you receive a `Rate limit exceeded` error:
 
-1. **Остановите все API запросы** на 10 минут
-2. **Проверьте настройки планировщика** - возможно, слишком частые запросы
-3. **Увеличьте интервалы** между запросами
-4. **Используйте WebSocket** для получения данных вместо REST API
+1. **Stop all API requests** for 10 minutes
+2. **Check scheduler settings** - possibly too frequent requests
+3. **Increase intervals** between requests
+4. **Use WebSocket** for data instead of REST API
 
-### Мониторинг
+### Monitoring
 
-Система автоматически логирует:
-- Количество запросов в минуту
-- Ошибки rate limit
-- Время синхронизации с сервером
-- Состояние WebSocket подключений
+The system automatically logs:
+- Number of requests per minute
+- Rate limit errors
+- Time synchronization with server
+- WebSocket connection status

@@ -1,28 +1,28 @@
-# Интеграция ML Модели BTC/USDT
+# ML Model Integration for BTC/USDT
 
-## Обзор
-Интеграция модели алгоритмической торговли из GitHub репозитория:
+## Overview
+Integration of algorithmic trading model from GitHub repository:
 https://github.com/zaid-24/Algorithmic-Trading-Model-For-BTC-USDT-Crypto-Market-
 
-## Архитектура
-- **Node.js Backend** - основной API
-- **Python ML Service** - Flask API с ML моделями
-- **MLP Classifier** + **LSTM** для прогнозов
-- **Docker Compose** для оркестрации
+## Architecture
+- **Node.js Backend** - main API
+- **Python ML Service** - Flask API with ML models
+- **MLP Classifier** + **LSTM** for predictions
+- **Docker Compose** for orchestration
 
-## Быстрый старт
+## Quick Start
 
-### 1. Запуск с Docker
+### 1. Running with Docker
 ```bash
-# Запустить все сервисы
+# Start all services
 docker-compose up -d
 
-# Проверить статус
+# Check status
 curl http://localhost:3000/health
 curl http://localhost:5000/health
 ```
 
-### 2. Конфигурация (.env)
+### 2. Configuration (.env)
 ```env
 ML_ENABLED=true
 ML_SERVICE_URL=http://localhost:5000
@@ -32,7 +32,7 @@ ML_TRAIN_DATA_LIMIT=1000
 
 ## API Endpoints
 
-### Обучение модели
+### Model Training
 ```bash
 POST /api/ml/train
 {
@@ -41,7 +41,7 @@ POST /api/ml/train
 }
 ```
 
-### Получение прогноза
+### Get Prediction
 ```bash
 POST /api/ml/predict
 {
@@ -50,7 +50,7 @@ POST /api/ml/predict
 }
 ```
 
-### Автоматическая торговля
+### Automatic Trading
 ```bash
 POST /api/ml/auto-trade
 {
@@ -60,15 +60,15 @@ POST /api/ml/auto-trade
 }
 ```
 
-## Модель включает
-- RSI, Bollinger Bands, EMA кроссоверы
+## Model Includes
+- RSI, Bollinger Bands, EMA crossovers
 - Ultimate Oscillator, Z-Score
-- Stop-loss стратегия на основе ATR
-- LSTM предсказание цен
+- Stop-loss strategy based on ATR
+- LSTM price prediction
 
-## Результаты оригинальной модели
+## Original Model Results
 - Sharpe Ratio: 1.93
 - Win Rate: 84.02%
 - Max Drawdown: 8.95%
 
-⚠️ **Важно**: Всегда тестируйте на testnet перед реальной торговлей! 
+⚠️ **Important**: Always test on testnet before real trading! 
