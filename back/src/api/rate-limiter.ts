@@ -4,7 +4,7 @@ export class RateLimiter {
   private windowMs: number;
   private backoffDelay: number = 1000; // Начальная задержка для backoff
 
-  constructor(maxRequests: number = 100, windowMs: number = 60000) { // 100 запросов в минуту
+  constructor(maxRequests: number = 500, windowMs: number = 60000) { // 100 запросов в минуту
     this.requests = [];
     this.maxRequests = maxRequests;
     this.windowMs = windowMs;
