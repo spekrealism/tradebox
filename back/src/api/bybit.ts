@@ -1,4 +1,6 @@
 import ccxt, { Exchange, Order, Ticker, OrderBook, Balances, Position } from 'ccxt';
+import crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config';
 import { RateLimiter } from './rate-limiter';
 import { BybitWebSocket } from './bybit-websocket';
@@ -91,7 +93,11 @@ class BybitApi {
         this.rateLimiter.resetBackoff();
         return result;
       } catch (error: any) {
-        console.error(`Попытка ${attempt}/${retries} не удалась:`, error.message);
+        console.error(
+          `Попытка ${attempt}/${retries} не удалась:`,
+          error.message,
+          process.env.DEBUG ? error : ''
+        );
         
         // Проверяем код ошибки rate limit
         if (error.message?.includes('Rate limit') || 
@@ -245,7 +251,7 @@ class BybitApi {
   public async fetchPositions(symbols?: string[]): Promise<Position[]> {
     return this.makeRequest(async () => {
       const positions = await this.exchange.fetchPositions(symbols);
-      return positions.filter(pos => pos.contracts && pos.contracts !== 0); // Только открытые позиции
+      return positions.filter((pos: any) => pos.contracts && pos.contracts !== 0); // Только открытые позиции
     });
   }
 
@@ -309,19 +315,35 @@ class BybitApi {
     });
   }
 
-  public async createSubAccountApiKey(subUid: string, permissions: string[] = ['Trade']): Promise<any> {
+  public async createSubAccountApiKey(
+    subUid: string | number,
+    permissions: Record<string, string[]> = {
+      Spot: ['SpotTrade'],
+      ContractTrade: ['Order', 'Position'],
+      Wallet: ['AccountTransfer'],
+    }
+  ): Promise<any> {
     return this.makeRequest(async () => {
       if (!config.bybit.apiKey) {
         throw new Error('API ключ не настроен для операций с суб-аккаунтами');
       }
 
-      const params = {
-        subuid: subUid,
-        readOnly: 0, // 0 - может торговать, 1 - только чтение
-        permissions: permissions.join(','), // 'Trade', 'Wallet', 'Options', 'Derivatives', 'CopyTrading', 'BlockTrade', 'Exchange', 'NFT'
+      // Ensure subuid is an integer as required by the API
+      const subuidInt = typeof subUid === 'string' ? parseInt(subUid, 10) : subUid;
+      if (isNaN(subuidInt as any)) {
+        throw new Error('subUid должен быть числом');
+      }
+
+      const params: any = {
+        subuid: subuidInt,
+        readOnly: 0,
+        permissions,
       };
 
-      const response = await (this.exchange as any).privatePostV5UserCreateSubApiKey(params);
+      // The official docs do not require request_id here; if idempotency issues appear, you can uncomment the next line:
+      // params.request_id = uuidv4();
+
+      const response = await (this.exchange as any).privatePostV5UserCreateSubApi(params);
       return response;
     });
   }
@@ -351,19 +373,47 @@ class BybitApi {
   ): Promise<any> {
     return this.makeRequest(async () => {
       if (!config.bybit.apiKey) {
-        throw new Error('API ключ не настроен для операций с суб-аккаунтами');
+        throw new Error('API ключ не настроен для внутренних переводов');
       }
 
       const params = {
-        transferId: Date.now().toString(), // Уникальный ID трансфера
+        transferId: uuidv4(),
         coin,
         amount,
         fromMemberId: await this.getCurrentUid(), // Главный аккаунт
         toMemberId: subUid,
         fromAccountType,
-        toAccountType
+        toAccountType,
       };
 
+      const response = await (this.exchange as any).privatePostV5AssetTransferUniversalTransfer(params);
+      return response;
+    });
+  }
+
+  /**
+   * Internal transfer between different account types under the same UID.
+   * Ошибка 131200 = переданы одинаковые fromAccountType и toAccountType.
+   */
+  public async internalTransferBetweenAccountTypes(
+    coin: string,
+    amount: string,
+    fromAccountType: string,
+    toAccountType: string
+  ): Promise<any> {
+    const fromType = fromAccountType.toUpperCase();
+    const toType = toAccountType.toUpperCase();
+    if (fromType === toType) {
+      throw new Error('fromAccountType и toAccountType должны быть разными');
+    }
+    return this.makeRequest(async () => {
+      const params = {
+        transferId: uuidv4(),
+        coin: coin.toUpperCase(),
+        amount,
+        fromAccountType: 'UNIFIED',
+        toAccountType: 'UNIFIED',
+      };
       const response = await (this.exchange as any).privatePostV5AssetTransferInterTransfer(params);
       return response;
     });
@@ -376,7 +426,16 @@ class BybitApi {
       }
 
       const response = await (this.exchange as any).privateGetV5UserQueryApi();
-      return response.result.uid;
+      // console.log(`[BybitApi DEBUG] getCurrentUid response:`, JSON.stringify(response, null, 2));
+      
+      // В ответе поле называется 'userID', а не 'uid'
+      if (response.result && response.result.userID) {
+        return response.result.userID;
+      } else if (response.result && response.result.userID) {
+        return response.result.userID;
+      } else {
+        throw new Error('Не удалось получить UID из ответа API');
+      }
     });
   }
 

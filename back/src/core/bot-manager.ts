@@ -10,7 +10,8 @@ import {
   deleteTradingBot,
   createTradeRecord,
   getTradeHistory,
-  fetchOHLCVFromDb
+  fetchOHLCVFromDb,
+  initDb
 } from '../db';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -29,10 +30,26 @@ export class BotManager {
     initialBalance: number;
   }): Promise<string> {
     try {
+      // Ensure the database connection is initialised
+      await initDb();
+
       // 1. Создаем суб-аккаунт в Bybit
-      const username = `bot_${config.name.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`;
+      // Bybit sub-account username requirements: 4-16 chars, start with a letter, only letters & numbers
+      // Формируем короткий уникальный username: 6-16 символов, содержит буквы и цифры, начинается с буквы
+      const cleaned = config.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const basePart = cleaned.slice(0, 8) || 'bot'; // fallback, если base пустой
+      let username: string;
+      do {
+        const randomSuffix = Math.random().toString(36).substring(2, 8); // 6 символов
+        const rawUsername = `b${basePart}${randomSuffix}`;
+        username = rawUsername.slice(0, 16);
+      } while (
+        username.length < 6 ||
+        !/[a-z]/.test(username) ||
+        !/[0-9]/.test(username)
+      );
       const subAccount = await bybitApi.createSubAccount(username, 1, config.description);
-      
+      console.log(subAccount);
       if (!subAccount.result) {
         throw new Error('Не удалось создать суб-аккаунт в Bybit');
       }
@@ -40,13 +57,18 @@ export class BotManager {
       const subAccountId = subAccount.result.uid;
 
       // 2. Создаем API ключи для суб-аккаунта
-      const apiKeyResponse = await bybitApi.createSubAccountApiKey(subAccountId, ['Trade', 'Wallet']);
+      // Права доступа: торговля деривативами/спотом и переводы средств
+      const apiKeyResponse = await bybitApi.createSubAccountApiKey(subAccountId, {
+        Spot: ['SpotTrade'],
+        ContractTrade: ['Order', 'Position'],
+        Wallet: ['AccountTransfer']
+      });
       
       if (!apiKeyResponse.result) {
         throw new Error('Не удалось создать API ключи для суб-аккаунта');
       }
 
-      const { id: apiKey, secret } = apiKeyResponse.result;
+      const { apiKey, secret } = apiKeyResponse.result;
 
       // 3. Переводим начальный баланс на суб-аккаунт
       if (config.initialBalance > 0) {
