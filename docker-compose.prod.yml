@@ -1,0 +1,100 @@
+services:
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: trading_tailscale
+    hostname: trade
+    networks:
+      - trading_network
+    volumes:
+      - tailscale_state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+    command: >
+      sh -c "tailscaled & sleep 2 && \
+      tailscale up --authkey=${TS_AUTHKEY} --hostname=trade --accept-routes --accept-dns=false && \
+      tailscale serve --bg https / http://frontend:8080 && \
+      tailscale serve --bg https /api http://backend:3000/api && \
+      tailscale serve --bg https /health http://backend:3000/health && \
+      tail -f /dev/null"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./back
+    image: trade-backend:prod
+    container_name: trading_backend
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    env_file:
+      - ./back/.env
+    networks:
+      - trading_network
+    depends_on:
+      - tailscale
+    # не публикуем порт наружу, доступ будет через tailscale serve на хосте
+    expose:
+      - "3000"
+    restart: unless-stopped
+    depends_on:
+      - ml-service
+      - mongo
+      - redis
+
+  ml-service:
+    build:
+      context: ./ml-service
+    image: trade-ml:prod
+    container_name: trading_ml
+    networks:
+      - trading_network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./front
+    image: trade-frontend:prod
+    container_name: trading_frontend
+    networks:
+      - trading_network
+    depends_on:
+      - tailscale
+    expose:
+      - "8080"
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  mongo:
+    image: mongo:6.0
+    container_name: trading_mongo
+    environment:
+      MONGO_INITDB_DATABASE: trading_db
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - trading_network
+    restart: unless-stopped
+
+  redis:
+    image: redis:6.2-alpine
+    container_name: trading_redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - trading_network
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  redis_data:
+  tailscale_state:
+
+networks:
+  trading_network:
+    driver: bridge
+

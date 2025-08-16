@@ -14,11 +14,15 @@ import { botManager } from './core/bot-manager';
 const app = express();
 
 // Безопасность
+app.disable('x-powered-by');
 app.use(helmet());
-app.use(cors({
-  origin: config.server.allowedOrigins,
-  credentials: true
-}));
+// В продакшене используем same-origin через reverse proxy (CORS не нужен)
+if (config.server.nodeEnv !== 'production') {
+  app.use(cors({
+    origin: config.server.allowedOrigins,
+    credentials: true
+  }));
+}
 
 // Rate limiting для API endpoints
 const limiter = rateLimit({

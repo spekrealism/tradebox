@@ -1,3 +1,45 @@
+# Production (Tailscale)
+
+Шаги запуска прод-окружения c Tailscale:
+
+1) Установите Tailscale на сервере и поднимите туннель:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --ssh --accept-routes
+```
+
+2) Соберите и поднимите контейнеры (prod):
+
+```bash
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml up -d
+```
+
+3) Настройте Tailscale Serve для фронта и API:
+
+```bash
+# Проксируем фронт
+sudo tailscale serve --bg https / http://127.0.0.1:8080
+
+# Проксируем API под /api
+sudo tailscale serve --bg https /api http://127.0.0.1:3000/api
+
+# Healthcheck
+sudo tailscale serve --bg https /health http://127.0.0.1:3000/health
+```
+
+4) Откройте в браузере: https://<ваш-хост>.ts.net
+
+5) В .env задайте строгое CORS (или отключите CORS, как сделано в продакшене):
+
+```
+ALLOWED_ORIGINS=https://<ваш-хост>.ts.net
+```
+
+Примечания:
+- В prod CORS отключен и предполагается same-origin через Tailscale Serve.
+- Порты контейнеров не публикуются наружу; доступ только через tailscale.
 # 🚀 Crypto Trading Bot with ML
 
 Automated cryptocurrency trading system with machine learning support, based on the model from [GitHub repository](https://github.com/zaid-24/Algorithmic-Trading-Model-For-BTC-USDT-Crypto-Market-).

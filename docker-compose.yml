@@ -1,7 +1,9 @@
 services:
   # Node.js Backend
   backend:
-    build: ./back
+    build:
+      context: ./back
+      target: dev
     container_name: trading_backend
     ports:
       - "3000:3000"
@@ -20,7 +22,6 @@ services:
     volumes:
       - ./back/src:/app/src
       - ./back/package.json:/app/package.json
-    command: npm run dev
     restart: unless-stopped
     depends_on:
       - ml-service
@@ -52,7 +53,9 @@ services:
 
   # React Frontend
   frontend:
-    build: ./front
+    build:
+      context: ./front
+      target: dev
     container_name: trading_frontend
     ports:
       - "3001:3001"
@@ -62,7 +65,8 @@ services:
     volumes:
       - ./front/src:/app/src
       - ./front/package.json:/app/package.json
-    command: npm run dev
+      - ./front/vite.config.ts:/app/vite.config.ts
+    command: npm run dev -- --host 0.0.0.0
     restart: unless-stopped
     depends_on:
       - backend

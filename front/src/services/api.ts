@@ -1,6 +1,7 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+// Vite env типизированы через импорт типов ниже
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || window.location.origin || 'http://localhost:3000'
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -13,11 +14,15 @@ const apiClient = axios.create({
 // Request interceptor
 apiClient.interceptors.request.use(
   (config) => {
-    console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`)
+    if (!(import.meta as any).env?.PROD) {
+      console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`)
+    }
     return config
   },
   (error) => {
-    console.error('❌ API Request Error:', error)
+    if (!(import.meta as any).env?.PROD) {
+      console.error('❌ API Request Error:', error)
+    }
     return Promise.reject(error)
   }
 )
@@ -25,11 +30,15 @@ apiClient.interceptors.request.use(
 // Response interceptor
 apiClient.interceptors.response.use(
   (response) => {
-    console.log(`✅ API Response: ${response.status} ${response.config.url}`)
+    if (!(import.meta as any).env?.PROD) {
+      console.log(`✅ API Response: ${response.status} ${response.config.url}`)
+    }
     return response
   },
   (error) => {
-    console.error('❌ API Response Error:', error.response?.status, error.response?.data)
+    if (!(import.meta as any).env?.PROD) {
+      console.error('❌ API Response Error:', error.response?.status, error.response?.data)
+    }
     return Promise.reject(error)
   }
 )
