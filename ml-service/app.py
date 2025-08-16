@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import warnings
 from datetime import datetime
-from model_components import BTCUSDTMLModel
+from models import BTCUSDTMLModel
 warnings.filterwarnings('ignore')
 
 app = Flask(__name__)
