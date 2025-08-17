@@ -43,7 +43,7 @@ export class MLTradingStrategy {
   private mlServiceUrl: string;
 
   constructor() {
-    this.mlServiceUrl = process.env.ML_SERVICE_URL || 'http://localhost:5000';
+    this.mlServiceUrl = config.ml.serviceUrl;
   }
 
   /**
@@ -75,6 +75,33 @@ export class MLTradingStrategy {
     } catch (error) {
       console.error('Technical indicators error:', error);
       throw new Error(`Technical indicators calculation failed`);
+    }
+  }
+
+  /**
+   * Получить облако прогноза (fan + bifurcation) для отрисовки коридора
+   */
+  async getPredictionCloud(payload: {
+    ohlcv: MLStrategyInput['ohlcv'];
+    horizon_steps?: number;
+    params?: any;
+  }): Promise<{ centerline: Array<{ t: number; p: number }>; cloud: Array<{ t: number; p: number; a: number }>; meta: any }>
+  {
+    try {
+      const response = await axios.post(`${this.mlServiceUrl}/predict_cloud`, {
+        ohlcv: payload.ohlcv,
+        horizon_steps: payload.horizon_steps ?? 8,
+        params: payload.params ?? {},
+        method: (payload.params && payload.params.method) || 'fan',
+        lookback: (payload.params && payload.params.lookback) || 30,
+      }, {
+        timeout: 30000,
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('ML Service cloud error:', error);
+      throw new Error(`ML cloud prediction failed`);
     }
   }
 

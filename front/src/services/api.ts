@@ -93,6 +93,14 @@ export interface OHLCVData {
   volume: number
 }
 
+export interface PredictionCloudPoint { t: number; p: number; a: number }
+export interface PredictionCenterPoint { t: number; p: number }
+export interface PredictionCloudResponse {
+  centerline: PredictionCenterPoint[]
+  cloud: PredictionCloudPoint[]
+  meta: any
+}
+
 export interface TickerData {
   symbol: string
   last: number
@@ -185,6 +193,25 @@ export const api = {
   // ML endpoints
   getMLPrediction: async (symbol: string = 'BTCUSDT', limit: number = 100): Promise<MLPrediction> => {
     const response = await apiClient.post('/api/ml/predict', { symbol, limit })
+    return response.data.data
+  },
+
+  getPredictionCloud: async (
+    symbol: string,
+    timeframe: string = '1h',
+    limit: number = 300,
+    horizonSteps: number = 8,
+    params?: any & { method?: 'fan' | 'quantile'; lookback?: number }
+  ): Promise<PredictionCloudResponse> => {
+    const response = await apiClient.post('/api/ml/predict-cloud', {
+      symbol,
+      limit,
+      timeframe,
+      horizon_steps: horizonSteps,
+      method: params?.method || 'quantile',
+      lookback: params?.lookback || 30,
+      params: params || {}
+    })
     return response.data.data
   },
 

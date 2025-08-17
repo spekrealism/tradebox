@@ -434,6 +434,26 @@ if (config.ml.enabled) {
     }
   });
 
+  // Получить облако прогноза для построения коридора
+  app.post('/api/ml/predict-cloud', async (req, res) => {
+    try {
+      const { symbol = 'BTCUSDT', limit = 300, timeframe = '1h', horizon_steps = 8, params = {}, method = 'fan', lookback = 30 } = req.body;
+      const ohlcv = await bybitApi.fetchOHLCV(symbol, timeframe, undefined, Math.max(300, Number(limit)));
+      const inputOhlcv = ohlcv.map(([timestamp, open, high, low, close, volume]) => ({
+        timestamp: Number(timestamp),
+        open: Number(open),
+        high: Number(high),
+        low: Number(low),
+        close: Number(close),
+        volume: Number(volume)
+      }));
+      const cloud = await mlStrategy.getPredictionCloud({ ohlcv: inputOhlcv, horizon_steps: Number(horizon_steps), params: { ...params, method, lookback } });
+      res.json({ success: true, data: cloud });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message, code: 'ML_PREDICT_CLOUD_ERROR' });
+    }
+  });
+
   // Обучение модели
   app.post('/api/ml/train', async (req, res) => {
     try {

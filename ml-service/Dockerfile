@@ -15,8 +15,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем код приложения
 COPY . .
 
-# Создаем директорию для моделей
-RUN mkdir -p models
+# Создаем директорию для артефактов моделей
+RUN mkdir -p artifacts
 
 # Экспортируем порт
 EXPOSE 5000

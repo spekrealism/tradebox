@@ -39,9 +39,10 @@ services:
     environment:
       - FLASK_ENV=development
       - PYTHONUNBUFFERED=1
+      - MODELS_DIR=/app/artifacts
     volumes:
       - ./ml-service:/app
-      - ml-models:/app/models
+      - ml-models:/app/artifacts
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]

@@ -50,6 +50,8 @@ services:
       context: ./ml-service
     image: trade-ml:prod
     container_name: trading_ml
+    environment:
+      - MODELS_DIR=/app/artifacts
     networks:
       - trading_network
     restart: unless-stopped

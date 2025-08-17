@@ -7,6 +7,8 @@ from datetime import datetime
 import ta
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import load_model
+from typing import List, Dict, Any, Tuple
+from .forecast import DiffuseFanBifurcation
 
 from .mlp import train_mlp
 from .lstm import train_lstm
@@ -223,5 +225,54 @@ class BTCUSDTMLModel:
             'transformer_prediction': float(transformer_pred) if transformer_pred is not None else None,
             'current_price': float(current_price),
         }
+
+    def generate_fan_bifurcation_cloud(
+        self,
+        last_ts_ms: int,
+        p0: float,
+        horizon_steps: int,
+        dt_ms: int,
+        pred_price: float,
+        atr_value: float,
+        params: Dict[str, Any] = None,
+    ) -> Dict[str, Any]:
+        """Строит fan-конус + бифуркацию в координатах (t, price). Возвращает dict с centerline и cloud."""
+        if params is None:
+            params = {}
+        t0 = int(last_ts_ms)
+        t1 = int(last_ts_ms + horizon_steps * dt_ms)
+        slope_recent = float(params.get('slope_recent', 0.0))
+        width_k = float(params.get('k_atr', 1.0))
+        width_base = width_k * float(atr_value)
+        mode = params.get('spread_mode', 'sqrt')
+        anis = tuple(params.get('anisotropy', (0.35, 1.0)))
+        bif_frac = float(params.get('bifurcate_at', 0.7))
+        bif_angle_deg = float(params.get('bif_angle_deg', 16.0))
+        bif_gain = float(params.get('bif_gain', 1.0))
+        samples_per_step = int(params.get('samples_per_step', 70))
+        steps = int(params.get('steps', 180))
+        seed = int(params.get('seed', 1234))
+
+        res = DiffuseFanBifurcation.generate(
+            last_ts_ms=t0,
+            p0=p0,
+            horizon_steps=horizon_steps,
+            dt_ms=dt_ms,
+            pred_price=pred_price,
+            atr_value=float(atr_value),
+            params={
+                'slope_recent': slope_recent,
+                'k_atr': width_k,
+                'spread_mode': mode,
+                'anisotropy': anis,
+                'bifurcate_at': bif_frac,
+                'bif_angle_deg': bif_angle_deg,
+                'bif_gain': bif_gain,
+                'samples_per_step': samples_per_step,
+                'steps': steps,
+                'seed': seed,
+            }
+        )
+        return {'centerline': res['centerline'], 'cloud': res['cloud'], 'meta': {'k_atr': width_k, 'atr': float(atr_value), 'horizon_steps': int(horizon_steps)}}
 
 

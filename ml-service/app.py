@@ -3,7 +3,11 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import warnings
 from datetime import datetime
-from models import BTCUSDTMLModel
+from models.manager import BTCUSDTMLModel
+from models.forecast import DiffuseFanBifurcation, generate_quantile_cloud_from_close
+import numpy as np
+import pandas as pd
+import ta
 warnings.filterwarnings('ignore')
 
 app = Flask(__name__)
@@ -35,6 +39,65 @@ def predict():
         
         return jsonify(prediction)
     
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/predict_cloud', methods=['POST'])
+def predict_cloud():
+    try:
+        data = request.json
+        df = pd.DataFrame(data['ohlcv'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+
+        if not ml_model.is_trained:
+            return jsonify({'error': 'Model is not trained yet'}), 400
+
+        # шаг таймфрейма
+        ts_arr = ((df.index.astype('int64') // 10**6).astype(int)).values
+        if len(ts_arr) < 3:
+            return jsonify({'error': 'Not enough data'}), 400
+        dt_ms = int(np.median(np.diff(ts_arr[-10:]))) if len(ts_arr) >= 11 else int(np.median(np.diff(ts_arr)))
+        last_ts_ms = int(ts_arr[-1])
+
+        horizon_steps = int(data.get('horizon_steps', 2))
+        method = (data.get('method') or 'fan').lower()  # 'fan' | 'quantile'
+
+        if method == 'quantile':
+            # Квантильная регрессия по close
+            close = df['close'].astype(float).values
+            out = generate_quantile_cloud_from_close(close, last_ts_ms=last_ts_ms, dt_ms=dt_ms, horizon_steps=horizon_steps, lookback=int(data.get('lookback', 30)))
+            return jsonify(out)
+        else:
+            # Fan + bifurcation (по умолчанию)
+            pred_out = ml_model.predict(df.copy())
+            pred_price = float(pred_out.get('transformer_prediction') or pred_out['lstm_prediction'])
+            p0 = float(df['close'].iloc[-1])
+
+            atr_val = ta.volatility.AverageTrueRange(
+                high=df['high'].tail(14),
+                low=df['low'].tail(14),
+                close=df['close'].tail(14)
+            ).average_true_range().iloc[-1]
+            if not np.isfinite(atr_val):
+                ret = np.log(df['close']).diff().tail(30).dropna()
+                atr_val = float(ret.std() * p0 * np.sqrt(14))
+
+            params = data.get('params', {})
+            k = min(8, max(1, int(data.get('slope_window', 5))))
+            params.setdefault('slope_recent', float(df['close'].iloc[-1] - df['close'].iloc[-k]) / max(1, k))
+
+            out = ml_model.generate_fan_bifurcation_cloud(
+                last_ts_ms=last_ts_ms,
+                p0=p0,
+                horizon_steps=horizon_steps,
+                dt_ms=dt_ms,
+                pred_price=pred_price,
+                atr_value=float(atr_val),
+                params=params
+            )
+            return jsonify(out)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
