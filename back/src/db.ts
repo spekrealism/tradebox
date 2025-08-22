@@ -3,6 +3,7 @@ import { MongoClient, Db, ObjectId } from 'mongodb';
 import type { Document } from 'mongodb';
 import { config } from './config';
 import { TradingBot, TradeRecord } from './types';
+import { encryptSecret, decryptSecret } from './crypto';
 
 export interface OHLCVRecord {
   symbol: string;
@@ -53,6 +54,13 @@ export const initDb = async (): Promise<void> => {
   ]);
 
   console.log('📊 Подключение к MongoDB установлено и индексы созданы');
+
+  // One-time/background migration: encrypt existing plaintext apiKey/apiSecret
+  try {
+    await encryptExistingBotSecrets();
+  } catch (e) {
+    console.warn('⚠️ Ошибка миграции шифрования секретов:', e);
+  }
 };
 
 function getCollection<T extends Document = Document>(name: string) {
@@ -65,6 +73,34 @@ function getCollection<T extends Document = Document>(name: string) {
 /* -------------------------------------------------------------------------- */
 /*                                  OHLCV                                     */
 /* -------------------------------------------------------------------------- */
+
+async function encryptExistingBotSecrets(): Promise<void> {
+  const col = getCollection<any>('trading_bots');
+  // Найти документы, где apiKey или apiSecret не начинаются с v1:
+  const cursor = col.find({ $or: [
+    { apiKey: { $exists: true, $type: 'string', $not: { $regex: '^v1:' } } },
+    { apiSecret: { $exists: true, $type: 'string', $not: { $regex: '^v1:' } } },
+  ]});
+
+  const ops: any[] = [];
+  while (await cursor.hasNext()) {
+    const doc = await cursor.next();
+    const update: any = {};
+    if (typeof doc.apiKey === 'string' && !doc.apiKey.startsWith('v1:')) {
+      update.apiKey = encryptSecret(doc.apiKey);
+    }
+    if (typeof doc.apiSecret === 'string' && !doc.apiSecret.startsWith('v1:')) {
+      update.apiSecret = encryptSecret(doc.apiSecret);
+    }
+    if (Object.keys(update).length) {
+      ops.push({ updateOne: { filter: { _id: doc._id }, update: { $set: update } } });
+    }
+  }
+  if (ops.length) {
+    await col.bulkWrite(ops, { ordered: false });
+    console.log(`🔐 Зашифровано секретов у ${ops.length} ботов`);
+  }
+}
 
 export async function saveOHLCVBulk(
   symbol: string,
@@ -119,7 +155,15 @@ export async function createTradingBot(
 ): Promise<string> {
   const col = getCollection<TradingBotDoc>('trading_bots');
   const now = new Date().toISOString();
-  const result = await col.insertOne({ ...bot, createdAt: now, updatedAt: now } as any);
+  const toInsert: any = {
+    ...bot,
+    // Encrypt secrets at rest
+    apiKey: bot.apiKey && !bot.apiKey.startsWith('v1:') ? encryptSecret(bot.apiKey) : bot.apiKey,
+    apiSecret: bot.apiSecret && !bot.apiSecret.startsWith('v1:') ? encryptSecret(bot.apiSecret) : bot.apiSecret,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const result = await col.insertOne(toInsert as any);
   return result.insertedId.toString();
 }
 
@@ -143,6 +187,12 @@ export async function updateTradingBot(
 ): Promise<void> {
   const { id: _, ...rest } = updates as any;
   if (Object.keys(rest).length === 0) return;
+  if (typeof rest.apiKey === 'string') {
+    rest.apiKey = rest.apiKey.startsWith('v1:') ? rest.apiKey : encryptSecret(rest.apiKey);
+  }
+  if (typeof rest.apiSecret === 'string') {
+    rest.apiSecret = rest.apiSecret.startsWith('v1:') ? rest.apiSecret : encryptSecret(rest.apiSecret);
+  }
   rest.updatedAt = new Date().toISOString();
   await getCollection('trading_bots').updateOne(
     { _id: new ObjectId(id) },
@@ -157,7 +207,15 @@ export async function deleteTradingBot(id: string): Promise<void> {
 function mapBotDoc(doc: TradingBotDoc): TradingBot {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { _id, ...rest } = doc as any;
-  return { id: _id.toString(), ...rest } as TradingBot;
+  const decrypted: any = { ...rest };
+  // Decrypt on read; if value isn't in our envelope, treat as plaintext (backward compatibility)
+  if (typeof decrypted.apiKey === 'string') {
+    decrypted.apiKey = decryptSecret(decrypted.apiKey);
+  }
+  if (typeof decrypted.apiSecret === 'string') {
+    decrypted.apiSecret = decryptSecret(decrypted.apiSecret);
+  }
+  return { id: _id.toString(), ...decrypted } as TradingBot;
 }
 
 /* -------------------------------------------------------------------------- */

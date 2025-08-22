@@ -43,6 +43,9 @@ BYBIT_API_KEY=your_api_key_here
 BYBIT_API_SECRET=your_api_secret_here
 BYBIT_TESTNET=true
 
+# Ключ шифрования секретов (обязательно, 32 байта в base64/hex или произвольная строка)
+ENCRYPTION_KEY=please_set_strong_key
+
 # Сервер конфигурация
 PORT=3000
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001

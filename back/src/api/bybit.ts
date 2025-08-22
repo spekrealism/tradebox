@@ -46,8 +46,8 @@ class BybitApi {
       this.exchange.setSandboxMode(true);
     }
 
-    // Более консервативные настройки: 200 запросов за 60 секунд
-    this.rateLimiter = new RateLimiter(200, 60000);
+    // Более консервативные настройки: 200 HTTP + 50 WebSocket запросов за 60 секунд
+    this.rateLimiter = new RateLimiter(200, 50, 60000);
     
     // Инициализация WebSocket соединений
     this.publicWs = new BybitWebSocket(false);
@@ -64,7 +64,7 @@ class BybitApi {
     }
 
     try {
-      await this.rateLimiter.waitForSlot();
+      await this.rateLimiter.waitForHttpSlot();
       const serverTime = await this.publicExchange.fetchTime();
       
       if (serverTime) {
@@ -86,7 +86,7 @@ class BybitApi {
   private async makeRequest<T>(requestFunc: () => Promise<T>, retries: number = 3): Promise<T> {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        await this.rateLimiter.waitForSlot();
+        await this.rateLimiter.waitForHttpSlot();
         await this.syncServerTime();
         
         const result = await requestFunc();
@@ -139,38 +139,38 @@ class BybitApi {
   }
 
   // Подписка на тикеры через WebSocket
-  subscribeToTicker(symbol: string, callback: Function): void {
+  async subscribeToTicker(symbol: string, callback: Function): Promise<void> {
     const topic = `tickers.${symbol}`;
-    this.publicWs.subscribe(topic, callback);
+    await this.publicWs.subscribe(topic, callback);
   }
 
   // Подписка на книгу ордеров через WebSocket
-  subscribeToOrderBook(symbol: string, depth: number = 25, callback: Function): void {
+  async subscribeToOrderBook(symbol: string, depth: number = 25, callback: Function): Promise<void> {
     // Правильный формат для Bybit V5: orderBook.{depth}.{symbol}
     const topic = `orderBook.${depth}.${symbol}`;
-    this.publicWs.subscribe(topic, callback);
+    await this.publicWs.subscribe(topic, callback);
   }
 
   // Подписка на сделки через WebSocket
-  subscribeToTrades(symbol: string, callback: Function): void {
+  async subscribeToTrades(symbol: string, callback: Function): Promise<void> {
     const topic = `publicTrade.${symbol}`;
-    this.publicWs.subscribe(topic, callback);
+    await this.publicWs.subscribe(topic, callback);
   }
 
   // Подписка на позиции через приватный WebSocket
-  subscribeToPositions(callback: Function): void {
+  async subscribeToPositions(callback: Function): Promise<void> {
     if (!config.bybit.apiKey) {
       throw new Error('API ключ не настроен для приватных подписок');
     }
-    this.privateWs.subscribe('position', callback);
+    await this.privateWs.subscribe('position', callback);
   }
 
   // Подписка на ордера через приватный WebSocket
-  subscribeToOrders(callback: Function): void {
+  async subscribeToOrders(callback: Function): Promise<void> {
     if (!config.bybit.apiKey) {
       throw new Error('API ключ не настроен для приватных подписок');
     }
-    this.privateWs.subscribe('order', callback);
+    await this.privateWs.subscribe('order', callback);
   }
 
   public async fetchOHLCV(symbol: string, timeframe = '1h', since?: number, limit?: number) {
@@ -179,7 +179,7 @@ class BybitApi {
         throw new Error(`The exchange does not have fetchOHLCV method`);
       }
 
-      console.log(`Получение OHLCV для ${symbol}... (${this.rateLimiter.getRequestsCount()}/200 запросов)`);
+      console.log(`Получение OHLCV для ${symbol}... (${this.rateLimiter.getHttpRequestsCount()}/200 HTTP запросов)`);
       const ohlcv = await this.publicExchange.fetchOHLCV(symbol, timeframe, since, limit);
       console.log(`Получено ${ohlcv.length} свечей для ${symbol}`);
       return ohlcv;
@@ -264,15 +264,17 @@ class BybitApi {
   }
 
   // Статистика rate limiter
-  public getRateLimiterStats(): { requests: number, maxRequests: number } {
+  public getRateLimiterStats(): { httpRequests: number, websocketRequests: number, maxHttpRequests: number, maxWebsocketRequests: number } {
     return {
-      requests: this.rateLimiter.getRequestsCount(),
-      maxRequests: 200
+      httpRequests: this.rateLimiter.getHttpRequestsCount(),
+      websocketRequests: this.rateLimiter.getWebSocketRequestsCount(),
+      maxHttpRequests: 200,
+      maxWebsocketRequests: 50
     };
   }
 
   // Закрытие WebSocket соединений
-  public disconnect(): void {
+  public async disconnect(): Promise<void> {
     this.publicWs.disconnect();
     this.privateWs.disconnect();
   }

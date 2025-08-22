@@ -24,7 +24,7 @@ out/
 
 # IDE and editor files
 .vscode/
-.cursor/
+.cursor/*
 .idea/
 *.swp
 *.swo
@@ -275,3 +275,4 @@ keys/
 .local/
 local/ 
 */package-lock.json
+bot-cloud-init.yaml

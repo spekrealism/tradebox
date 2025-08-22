@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import crypto from 'crypto';
 import { config } from '../config';
+import { RateLimiter } from './rate-limiter';
 
 export interface BybitWebSocketData {
   topic: string;
@@ -18,6 +19,7 @@ export class BybitWebSocket {
   private pingInterval: NodeJS.Timeout | null = null;
   private subscriptions: Set<string> = new Set();
   private messageHandlers: Map<string, Function[]> = new Map();
+  private rateLimiter: RateLimiter;
 
   private readonly baseUrl: string;
   private readonly isPrivate: boolean;
@@ -27,6 +29,9 @@ export class BybitWebSocket {
     this.baseUrl = config.bybit.testnet 
       ? (isPrivate ? 'wss://stream-testnet.bybit.com/v5/private' : 'wss://stream-testnet.bybit.com/v5/public/linear')
       : (isPrivate ? 'wss://stream.bybit.com/v5/private' : 'wss://stream.bybit.com/v5/public/linear');
+    
+    // Инициализируем rate limiter для WebSocket операций
+    this.rateLimiter = new RateLimiter(200, 50, 60000);
   }
 
   async connect(): Promise<void> {
@@ -40,7 +45,7 @@ export class BybitWebSocket {
       console.log(`Подключение к Bybit WebSocket: ${this.baseUrl}`);
       this.ws = new WebSocket(this.baseUrl);
 
-      this.ws.on('open', () => {
+      this.ws.on('open', async () => {
         console.log('✅ WebSocket подключен к Bybit');
         this.isConnecting = false;
         this.reconnectAttempts = 0;
@@ -50,7 +55,7 @@ export class BybitWebSocket {
         }
         
         this.startPing();
-        this.resubscribeAll();
+        await this.resubscribeAll();
       });
 
       this.ws.on('message', (data: WebSocket.Data) => {
@@ -105,11 +110,22 @@ export class BybitWebSocket {
   }
 
   private startPing(): void {
-    this.pingInterval = setInterval(() => {
+    this.pingInterval = setInterval(async () => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        this.send({ op: 'ping' });
+        try {
+          // Проверяем, не слишком ли много WebSocket запросов
+          if (this.rateLimiter.getWebSocketRequestsCount() < 40) { // Оставляем запас
+            await this.rateLimiter.waitForWebSocketSlot();
+            this.send({ op: 'ping' });
+            this.rateLimiter.recordWebSocketActivity();
+          } else {
+            console.log('Пропускаем ping из-за высокого количества WebSocket запросов');
+          }
+        } catch (error) {
+          console.warn('Не удалось отправить ping из-за rate limit:', error);
+        }
       }
-    }, 30000); // ping каждые 30 секунд
+    }, 45000); // Увеличиваем интервал до 45 секунд для снижения нагрузки
   }
 
   private cleanup(): void {
@@ -136,14 +152,20 @@ export class BybitWebSocket {
     }, delay);
   }
 
-  private resubscribeAll(): void {
+  private async resubscribeAll(): Promise<void> {
     if (this.subscriptions.size > 0) {
-      console.log('Повторная подписка на топики:', Array.from(this.subscriptions));
-      const subscribeMessage = {
-        op: 'subscribe',
-        args: Array.from(this.subscriptions)
-      };
-      this.send(subscribeMessage);
+      try {
+        await this.rateLimiter.waitForWebSocketSlot();
+        console.log('Повторная подписка на топики:', Array.from(this.subscriptions));
+        const subscribeMessage = {
+          op: 'subscribe',
+          args: Array.from(this.subscriptions)
+        };
+        this.send(subscribeMessage);
+        this.rateLimiter.recordWebSocketActivity();
+      } catch (error) {
+        console.warn('Не удалось переподписаться из-за rate limit:', error);
+      }
     }
   }
 
@@ -196,7 +218,7 @@ export class BybitWebSocket {
     }
   }
 
-  subscribe(topic: string, handler?: Function): void {
+  async subscribe(topic: string, handler?: Function): Promise<void> {
     this.subscriptions.add(topic);
     
     if (handler) {
@@ -207,24 +229,36 @@ export class BybitWebSocket {
     }
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      const subscribeMessage = {
-        op: 'subscribe',
-        args: [topic]
-      };
-      this.send(subscribeMessage);
+      try {
+        await this.rateLimiter.waitForWebSocketSlot();
+        const subscribeMessage = {
+          op: 'subscribe',
+          args: [topic]
+        };
+        this.send(subscribeMessage);
+        this.rateLimiter.recordWebSocketActivity();
+      } catch (error) {
+        console.warn('Не удалось подписаться из-за rate limit:', error);
+      }
     }
   }
 
-  unsubscribe(topic: string): void {
+  async unsubscribe(topic: string): Promise<void> {
     this.subscriptions.delete(topic);
     this.messageHandlers.delete(topic);
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      const unsubscribeMessage = {
-        op: 'unsubscribe',
-        args: [topic]
-      };
-      this.send(unsubscribeMessage);
+      try {
+        await this.rateLimiter.waitForWebSocketSlot();
+        const unsubscribeMessage = {
+          op: 'unsubscribe',
+          args: [topic]
+        };
+        this.send(unsubscribeMessage);
+        this.rateLimiter.recordWebSocketActivity();
+      } catch (error) {
+        console.warn('Не удалось отписаться из-за rate limit:', error);
+      }
     }
   }
 
@@ -236,6 +270,7 @@ export class BybitWebSocket {
     }
     this.subscriptions.clear();
     this.messageHandlers.clear();
+    this.rateLimiter.reset();
   }
 
   isConnected(): boolean {
@@ -244,5 +279,13 @@ export class BybitWebSocket {
 
   getSubscriptions(): string[] {
     return Array.from(this.subscriptions);
+  }
+
+  // Получение статистики rate limiter для WebSocket
+  getRateLimiterStats(): { websocketRequests: number, maxWebsocketRequests: number } {
+    return {
+      websocketRequests: this.rateLimiter.getWebSocketRequestsCount(),
+      maxWebsocketRequests: 50
+    };
   }
 } 

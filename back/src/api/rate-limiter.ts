@@ -1,34 +1,59 @@
 export class RateLimiter {
-  private requests: number[];
-  private maxRequests: number;
+  private httpRequests: number[];
+  private websocketRequests: number[];
+  private maxHttpRequests: number;
+  private maxWebsocketRequests: number;
   private windowMs: number;
   private backoffDelay: number = 1000; // Начальная задержка для backoff
 
-  constructor(maxRequests: number = 500, windowMs: number = 60000) { // 100 запросов в минуту
-    this.requests = [];
-    this.maxRequests = maxRequests;
+  constructor(maxHttpRequests: number = 200, maxWebsocketRequests: number = 50, windowMs: number = 60000) {
+    this.httpRequests = [];
+    this.websocketRequests = [];
+    this.maxHttpRequests = maxHttpRequests;
+    this.maxWebsocketRequests = maxWebsocketRequests;
     this.windowMs = windowMs;
   }
 
-  async waitForSlot(): Promise<void> {
+  async waitForHttpSlot(): Promise<void> {
     const now = Date.now();
     
-    // Удаляем старые запросы, выходящие за временное окно
-    this.requests = this.requests.filter(timestamp => now - timestamp < this.windowMs);
+    // Удаляем старые HTTP запросы, выходящие за временное окно
+    this.httpRequests = this.httpRequests.filter(timestamp => now - timestamp < this.windowMs);
     
-    // Если достигли лимита, ждем
-    if (this.requests.length >= this.maxRequests) {
-      const oldestRequest = Math.min(...this.requests);
+    // Если достигли лимита HTTP запросов, ждем
+    if (this.httpRequests.length >= this.maxHttpRequests) {
+      const oldestRequest = Math.min(...this.httpRequests);
       const waitTime = this.windowMs - (now - oldestRequest) + 1000; // +1000ms буфер
       
-      console.log(`Rate limit достигнут. Ожидание ${waitTime}ms...`);
+      console.log(`HTTP Rate limit достигнут. Ожидание ${waitTime}ms... (${this.httpRequests.length}/${this.maxHttpRequests})`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
       
-      return this.waitForSlot(); // Рекурсивная проверка
+      return this.waitForHttpSlot(); // Рекурсивная проверка
     }
     
-    // Записываем текущий запрос
-    this.requests.push(now);
+    // Записываем текущий HTTP запрос
+    this.httpRequests.push(now);
+  }
+
+  async waitForWebSocketSlot(): Promise<void> {
+    const now = Date.now();
+    
+    // Удаляем старые WebSocket запросы, выходящие за временное окно
+    this.websocketRequests = this.websocketRequests.filter(timestamp => now - timestamp < this.windowMs);
+    
+    // Если достигли лимита WebSocket запросов, ждем
+    if (this.websocketRequests.length >= this.maxWebsocketRequests) {
+      const oldestRequest = Math.min(...this.websocketRequests);
+      const waitTime = this.windowMs - (now - oldestRequest) + 1000; // +1000ms буфер
+      
+      console.log(`WebSocket Rate limit достигнут. Ожидание ${waitTime}ms... (${this.websocketRequests.length}/${this.maxWebsocketRequests})`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      
+      return this.waitForWebSocketSlot(); // Рекурсивная проверка
+    }
+    
+    // Записываем текущий WebSocket запрос
+    this.websocketRequests.push(now);
   }
 
   // Метод для обработки ошибок rate limit с экспоненциальной задержкой
@@ -45,14 +70,36 @@ export class RateLimiter {
     this.backoffDelay = 1000;
   }
 
-  getRequestsCount(): number {
+  getHttpRequestsCount(): number {
     const now = Date.now();
-    this.requests = this.requests.filter(timestamp => now - timestamp < this.windowMs);
-    return this.requests.length;
+    this.httpRequests = this.httpRequests.filter(timestamp => now - timestamp < this.windowMs);
+    return this.httpRequests.length;
+  }
+
+  getWebSocketRequestsCount(): number {
+    const now = Date.now();
+    this.websocketRequests = this.websocketRequests.filter(timestamp => now - timestamp < this.windowMs);
+    return this.websocketRequests.length;
+  }
+
+  getTotalRequestsCount(): number {
+    return this.getHttpRequestsCount() + this.getWebSocketRequestsCount();
   }
 
   reset(): void {
-    this.requests = [];
+    this.httpRequests = [];
+    this.websocketRequests = [];
     this.backoffDelay = 1000;
+  }
+
+  // Метод для регистрации WebSocket активности (ping, subscribe, etc.)
+  recordWebSocketActivity(): void {
+    const now = Date.now();
+    this.websocketRequests.push(now);
+    
+    // Ограничиваем количество записей в памяти
+    if (this.websocketRequests.length > this.maxWebsocketRequests * 2) {
+      this.websocketRequests = this.websocketRequests.slice(-this.maxWebsocketRequests);
+    }
   }
 } 

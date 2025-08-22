@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { config } from '../config';
 
 export interface MLPrediction {
@@ -46,6 +46,20 @@ export class MLTradingStrategy {
     this.mlServiceUrl = config.ml.serviceUrl;
   }
 
+  private buildErrorMessage(error: any, context: string): string {
+    if (axios.isAxiosError(error)) {
+      const ae = error as AxiosError<any>;
+      const status = ae.response?.status;
+      const statusText = ae.response?.statusText;
+      const data = ae.response?.data;
+      const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
+      const code = ae.code;
+      return `${context}: ${status || ''} ${statusText || ''} ${code || ''} ${dataStr || ae.message}`.trim();
+    }
+    if (error instanceof Error) return `${context}: ${error.message}`;
+    try { return `${context}: ${JSON.stringify(error)}`; } catch { return `${context}: Unknown error`; }
+  }
+
   /**
    * Получить прогноз от ML модели
    */
@@ -60,8 +74,9 @@ export class MLTradingStrategy {
 
       return response.data;
     } catch (error) {
-      console.error('ML Service error:', error);
-      throw new Error(`ML prediction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const msg = this.buildErrorMessage(error, 'ML prediction failed');
+      console.error('ML Service error:', msg);
+      throw new Error(msg);
     }
   }
 
@@ -73,8 +88,9 @@ export class MLTradingStrategy {
       const response = await axios.post(`${this.mlServiceUrl}/indicators`, input);
       return response.data;
     } catch (error) {
-      console.error('Technical indicators error:', error);
-      throw new Error(`Technical indicators calculation failed`);
+      const msg = this.buildErrorMessage(error, 'Technical indicators calculation failed');
+      console.error('Technical indicators error:', msg);
+      throw new Error(msg);
     }
   }
 
@@ -87,21 +103,42 @@ export class MLTradingStrategy {
     params?: any;
   }): Promise<{ centerline: Array<{ t: number; p: number }>; cloud: Array<{ t: number; p: number; a: number }>; meta: any }>
   {
+    const desiredMethod = (payload.params && payload.params.method) || 'fan';
+    const requestBody = {
+      ohlcv: payload.ohlcv,
+      horizon_steps: payload.horizon_steps ?? 8,
+      params: payload.params ?? {},
+      method: desiredMethod,
+      lookback: (payload.params && payload.params.lookback) || 30,
+    };
     try {
-      const response = await axios.post(`${this.mlServiceUrl}/predict_cloud`, {
-        ohlcv: payload.ohlcv,
-        horizon_steps: payload.horizon_steps ?? 8,
-        params: payload.params ?? {},
-        method: (payload.params && payload.params.method) || 'fan',
-        lookback: (payload.params && payload.params.lookback) || 30,
-      }, {
+      const response = await axios.post(`${this.mlServiceUrl}/predict_cloud`, requestBody, {
         timeout: 30000,
         headers: { 'Content-Type': 'application/json' }
       });
       return response.data;
-    } catch (error) {
-      console.error('ML Service cloud error:', error);
-      throw new Error(`ML cloud prediction failed`);
+    } catch (primaryError) {
+      const primaryMsg = this.buildErrorMessage(primaryError, 'ML cloud prediction failed');
+      console.error('ML Service cloud error (primary):', primaryMsg);
+
+      // Фолбэк на fan в случае проблем с quantile/LightGBM или обрыва соединения
+      const shouldFallbackToFan = desiredMethod !== 'fan';
+      if (shouldFallbackToFan) {
+        try {
+          const fallbackBody = { ...requestBody, method: 'fan' };
+          const response = await axios.post(`${this.mlServiceUrl}/predict_cloud`, fallbackBody, {
+            timeout: 30000,
+            headers: { 'Content-Type': 'application/json' }
+          });
+          const data = response.data;
+          return { ...data, meta: { ...(data?.meta || {}), fallback: true, originalError: primaryMsg } };
+        } catch (fallbackError) {
+          const fallbackMsg = this.buildErrorMessage(fallbackError, 'ML cloud prediction fallback (fan) failed');
+          console.error('ML Service cloud error (fallback):', fallbackMsg);
+          throw new Error(`${primaryMsg}; ${fallbackMsg}`);
+        }
+      }
+      throw new Error(primaryMsg);
     }
   }
 

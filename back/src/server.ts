@@ -10,6 +10,7 @@ import { StrategyManager } from './strategies/strategy-manager';
 import { initDb, fetchOHLCVFromDb, saveOHLCVBulk } from './db';
 import { startCollector } from './jobs/ohlcv-collector';
 import { botManager } from './core/bot-manager';
+import type { TradingBot } from './types';
 
 const app = express();
 
@@ -78,6 +79,12 @@ app.get('/health', (req, res) => {
     testnet: config.bybit.testnet
   });
 });
+
+// Утилита: удаляем чувствительные поля из объекта бота перед ответом клиенту
+function sanitizeBot(bot: TradingBot) {
+  const { apiKey: _k, apiSecret: _s, ...safe } = bot as any;
+  return safe;
+}
 
 // Информационные endpoints (только чтение)
 
@@ -365,14 +372,20 @@ app.get('/api/stats/rate-limiter', (req, res) => {
 // Получение статистики rate limiter
 app.get('/api/rate-limit', (req, res) => {
   const stats = bybitApi.getRateLimiterStats();
-  const remaining = stats.maxRequests - stats.requests;
-  
+  const totalRequests = stats.httpRequests + stats.websocketRequests;
+  const totalMaxRequests = stats.maxHttpRequests + stats.maxWebsocketRequests;
+  const remaining = totalMaxRequests - totalRequests;
+
   res.json({
     success: true,
     data: {
-      requests: stats.requests,
-      maxRequests: stats.maxRequests,
-      remaining: remaining,
+      httpRequests: stats.httpRequests,
+      maxHttpRequests: stats.maxHttpRequests,
+      websocketRequests: stats.websocketRequests,
+      maxWebsocketRequests: stats.maxWebsocketRequests,
+      totalRequests,
+      totalMaxRequests,
+      remaining,
       resetTime: new Date(Date.now() + 60000).toISOString(), // Через минуту
       status: remaining > 50 ? 'OK' : remaining > 20 ? 'WARNING' : 'CRITICAL'
     }
@@ -450,7 +463,21 @@ if (config.ml.enabled) {
       const cloud = await mlStrategy.getPredictionCloud({ ohlcv: inputOhlcv, horizon_steps: Number(horizon_steps), params: { ...params, method, lookback } });
       res.json({ success: true, data: cloud });
     } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message, code: 'ML_PREDICT_CLOUD_ERROR' });
+      // Подробный лог с телом запроса и укороченными данными, чтобы не засорять лог
+      const safeBody = (() => {
+        try {
+          const b = { ...req.body };
+          if (b && b.limit && b.limit > 0) b.limit = Number(b.limit);
+          if (b && Array.isArray(b?.ohlcv)) {
+            b.ohlcv = `array(${b.ohlcv.length})`;
+          }
+          return b;
+        } catch {
+          return { parseError: true };
+        }
+      })();
+      console.error('ML_PREDICT_CLOUD_ERROR:', error?.message || error, 'payload:', safeBody);
+      res.status(500).json({ success: false, error: error.message || 'ML cloud error', code: 'ML_PREDICT_CLOUD_ERROR' });
     }
   });
 
@@ -937,11 +964,12 @@ app.post('/api/bots', requireApiKey, async (req, res) => {
 app.get('/api/bots', async (req, res) => {
   try {
     const bots = await botManager.getAllBots();
-    
+    const safeBots = bots.map(sanitizeBot as any);
+
     res.json({
       success: true,
-      data: bots,
-      count: bots.length
+      data: safeBots,
+      count: safeBots.length
     });
   } catch (error: any) {
     res.status(500).json({
@@ -968,7 +996,7 @@ app.get('/api/bots/:botId', async (req, res) => {
 
     res.json({
       success: true,
-      data: bot
+      data: sanitizeBot(bot as any)
     });
   } catch (error: any) {
     res.status(500).json({
@@ -1164,14 +1192,14 @@ export const startServer = async (): Promise<void> => {
 process.on('SIGTERM', async () => {
   console.log('Получен SIGTERM, закрытие соединений...');
   await botManager.cleanup();
-  bybitApi.disconnect();
+  await bybitApi.disconnect();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('Получен SIGINT, закрытие соединений...');
   await botManager.cleanup();
-  bybitApi.disconnect();
+  await bybitApi.disconnect();
   process.exit(0);
 });
 
