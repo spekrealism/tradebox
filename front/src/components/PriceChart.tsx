@@ -50,7 +50,7 @@ export default function PriceChart({ symbol, timeframe = '1h', limit = 100 }: Pr
         // подгружаем прогнозный коридор от ML
         const horizonByTf: Record<string, number> = { '1m': 30, '5m': 36, '15m': 20, '30m': 16, '1h': 16, '4h': 12, '1d': 7 }
         const horizonSteps = horizonByTf[timeframe] ?? 16
-        const params = { samples_per_step: 25, steps: 120, k_atr: 1.0, method: 'quantile' as const }
+        const params = { samples_per_step: 25, steps: 120, k_atr: 1.0, method: 'fan' as const }
         const cloudResp = await api.getPredictionCloud(symbol, timeframe, Math.max(300, limit), horizonSteps, params)
         setCloud(cloudResp)
       } catch (err: any) {

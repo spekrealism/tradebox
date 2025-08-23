@@ -122,6 +122,7 @@ export default function Settings() {
                 BYBIT_API_KEY=your_api_key<br/>
                 BYBIT_API_SECRET=your_api_secret<br/>
                 BYBIT_TESTNET=true<br/>
+                ENCRYPTION_KEY=please_set_strong_key<br/>
                 ML_ENABLED=true<br/>
                 ML_SERVICE_URL=http://localhost:5000
               </Box>

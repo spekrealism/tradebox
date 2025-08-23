@@ -6,6 +6,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
+    libgomp1 \
+    cmake \
     && rm -rf /var/lib/apt/lists/*
 
 # Копируем requirements и устанавливаем Python зависимости
