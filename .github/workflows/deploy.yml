@@ -1,0 +1,145 @@
+name: CI/CD Pipeline
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build_and_push_images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: frontend
+            context: ./front
+            tag: frontend
+          - name: backend
+            context: ./back
+            tag: backend
+          - name: ml-service
+            context: ./ml-service
+            tag: ml-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and push ${{ matrix.name }} image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository }}/${{ matrix.tag }}:latest
+
+  deploy_to_vps:
+    needs: [build_and_push_images]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create root .env for compose
+        run: |
+          echo "TS_AUTHKEY=${{ secrets.TS_AUTHKEY }}" > .env
+        shell: bash
+
+      - name: Create backend .env
+        run: |
+          mkdir -p back
+          BACK_ENV_FILE=back/.env
+          : > "$BACK_ENV_FILE"
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> "$BACK_ENV_FILE"
+          echo "AI_MODEL=${{ secrets.AI_MODEL }}" >> "$BACK_ENV_FILE"
+          echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> "$BACK_ENV_FILE"
+          echo "TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" >> "$BACK_ENV_FILE"
+          echo "PORT=${{ secrets.PORT }}" >> "$BACK_ENV_FILE"
+          echo "NODE_ENV=production" >> "$BACK_ENV_FILE"
+          echo "API_BASE_URL=${{ secrets.API_BASE_URL }}" >> "$BACK_ENV_FILE"
+          echo "RATE_LIMIT_REQUESTS=${{ secrets.RATE_LIMIT_REQUESTS }}" >> "$BACK_ENV_FILE"
+          echo "RATE_LIMIT_WINDOW_HOURS=${{ secrets.RATE_LIMIT_WINDOW_HOURS }}" >> "$BACK_ENV_FILE"
+          echo "RATE_LIMIT_BLOCK_HOURS=${{ secrets.RATE_LIMIT_BLOCK_HOURS }}" >> "$BACK_ENV_FILE"
+          echo "RATE_LIMIT_MAX_HITS=${{ secrets.RATE_LIMIT_MAX_HITS }}" >> "$BACK_ENV_FILE"
+          echo "CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}" >> "$BACK_ENV_FILE"
+          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> "$BACK_ENV_FILE"
+          echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> "$BACK_ENV_FILE"
+          echo "ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" >> "$BACK_ENV_FILE"
+          echo "HONEYPOT_FIELD_NAME=${{ secrets.HONEYPOT_FIELD_NAME }}" >> "$BACK_ENV_FILE"
+          echo "MIN_FORM_FILL_TIME=${{ secrets.MIN_FORM_FILL_TIME }}" >> "$BACK_ENV_FILE"
+          echo "MAX_FORM_FILL_TIME=${{ secrets.MAX_FORM_FILL_TIME }}" >> "$BACK_ENV_FILE"
+          echo "CAPTCHA_SECRET_KEY=${{ secrets.CAPTCHA_SECRET_KEY }}" >> "$BACK_ENV_FILE"
+          echo "LOG_LEVEL=${{ secrets.LOG_LEVEL }}" >> "$BACK_ENV_FILE"
+          echo "WEBHOOK_URL=${{ secrets.WEBHOOK_URL }}" >> "$BACK_ENV_FILE"
+          echo "ALERT_THRESHOLD=${{ secrets.ALERT_THRESHOLD }}" >> "$BACK_ENV_FILE"
+          echo "CHAT_TIMEOUT_MS=${{ secrets.CHAT_TIMEOUT_MS }}" >> "$BACK_ENV_FILE"
+          echo "MAX_MESSAGE_LENGTH=${{ secrets.MAX_MESSAGE_LENGTH }}" >> "$BACK_ENV_FILE"
+          echo "SYSTEM_PROMPT=${{ secrets.SYSTEM_PROMPT }}" >> "$BACK_ENV_FILE"
+          echo "ML_SERVICE_URL=http://ml-service:5000" >> "$BACK_ENV_FILE"
+          echo "ML_ENABLED=true" >> "$BACK_ENV_FILE"
+          echo "ML_AUTO_TRAIN=false" >> "$BACK_ENV_FILE"
+          echo "ML_TRAIN_DATA_LIMIT=1000" >> "$BACK_ENV_FILE"
+          echo "PRIMARY_STRATEGY=openai" >> "$BACK_ENV_FILE"
+          echo "ENABLE_STRATEGY_COMPARISON=true" >> "$BACK_ENV_FILE"
+        shell: bash
+
+      - name: Copy envs and docker-compose.prod.yml to VPS
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          source: ".env,back/.env,docker-compose.prod.yml"
+          target: "/home/deploy/"
+
+      - name: Deploy services on VPS
+        uses: appleboy/ssh-action@v0.1.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            echo "INFO: Preparing deploy directory..."
+            cd /home/deploy
+            mkdir -p back
+            mv -f docker-compose.prod.yml docker-compose.yml
+
+            echo "INFO: Rewriting image names to GHCR..."
+            sed -i 's|image: trade-backend:prod|image: ghcr.io/${{ github.repository }}/backend:latest|g' docker-compose.yml || true
+            sed -i 's|image: trade-frontend:prod|image: ghcr.io/${{ github.repository }}/frontend:latest|g' docker-compose.yml || true
+            sed -i 's|image: trade-ml:prod|image: ghcr.io/${{ github.repository }}/ml-service:latest|g' docker-compose.yml || true
+
+            echo "INFO: Logging into GHCR..."
+            echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+
+            echo "INFO: Pulling latest images..."
+            docker compose pull || docker-compose pull
+
+            echo "INFO: Stopping old containers..."
+            docker compose down || docker-compose down
+
+            echo "INFO: Starting new containers..."
+            docker compose up -d || docker-compose up -d
+
+            echo "INFO: Cleaning up unused Docker images..."
+            docker image prune -f
+
+            echo "INFO: Deployment successful."
